@@ -24,7 +24,7 @@ def run_semgrep(path: Path) -> list[dict]:
         "docker", "run", "--rm",
         "-v", f"{abs_path}:/src:ro",
         settings.semgrep_docker_image,
-        "semgrep", "scan", "--config=auto", "--json", "--quiet", "--metrics=off", "/src",
+        "semgrep", "scan", "--config=auto", "--json", "--quiet", "/src",
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
