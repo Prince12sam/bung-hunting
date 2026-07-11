@@ -59,7 +59,7 @@ security fix <path>         # analyze + patch + test, PR creation is opt-in per 
 target and a real local repo, end to end, with output a human can act on
 without reading raw tool logs.
 
-## 4. Tool Orchestrator — status: slice 1 done (api/orchestrator.py)
+## 4. Tool Orchestrator — done (api/orchestrator.py)
 
 Coordinates external tools behind one interface so the Agent Core never
 shells out directly. Responsibilities:
@@ -71,24 +71,32 @@ shells out directly. Responsibilities:
 - Sandboxes every tool in a container (Docker) — nothing shells out to a
   host-installed binary.
 
-**Shipped in slice 1:** httpx (passive HTTP fingerprinting) + nmap (active
-TCP scan), a declarative `PIPELINE` list in api/orchestrator.py (adding a
-tool is a data change, not a new if/else branch), and the scope model from
-docs/SECURITY_AND_AUTHORIZATION.md — local/private targets auto-verify,
-everything else needs `es verify-target` (file-token method) before active
-stages run. Verified end-to-end against `localhost` (real open ports
-found) and a scope-denial test against an unverified third-party domain
-(confirms the gate actually blocks, not just warns).
+**Full pipeline shipped**, all containerized, all in the declarative
+`PIPELINE` list in api/orchestrator.py (adding/removing a tool is a data
+change, not a new if/else branch):
 
-**Deferred to a later slice:** subfinder, katana, nuclei, ffuf, dalfox,
-sqlmap. Each is: add a `run_x` in api/tool_router.py + a `ToolStage` entry
-in api/orchestrator.py's `PIPELINE` — the pattern is proven, this is now
-additive work, not architecture work.
+| Tool | Action class | Notes |
+|---|---|---|
+| httpx | passive-recon | HTTP fingerprint |
+| subfinder | passive-recon | subdomain enum via public sources only, never touches the target directly |
+| katana | passive-recon | crawl, GET requests only |
+| nmap | active-scan | TCP port scan |
+| nuclei | active-scan | template-based vuln scan; template cache persisted in named Docker volumes so only the first run per machine pays the download cost |
+| ffuf | active-scan | content/path discovery; no maintained official Docker image exists, so it's built from source — see docker/tools/ffuf/Dockerfile |
+| dalfox | active-scan | XSS scan |
+| sqlmap | active-scan | SQL injection test, `--level=1 --risk=1` by default |
 
-**Acceptance criteria (met for the shipped subset):** `es scan` on a
-localhost/lab target runs the pipeline and every finding lands in Memory
-with a consistent schema, regardless of which underlying tool produced it;
-an unauthorized target is refused rather than scanned.
+Verified end-to-end: real open ports found scanning `localhost`; a
+scope-denial test confirms an unverified third-party domain is refused, not
+scanned; each tool individually confirmed against a hermetic local HTTP
+server (tests/test_scan_tools.py) — including nuclei running a real
+~3000-request template scan and sqlmap running a real (negative) SQL
+injection test, not stubs.
+
+**Acceptance criteria: met.** `es scan` runs the full pipeline and every
+finding lands in Memory with a consistent schema, regardless of which
+underlying tool produced it; an unauthorized target is refused rather than
+scanned.
 
 ## 5. VS Code Extension
 

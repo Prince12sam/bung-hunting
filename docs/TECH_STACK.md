@@ -13,7 +13,7 @@
 | Database | PostgreSQL + pgvector | structured data + embeddings, one store |
 | Offline fallback | SQLite | only when Postgres isn't running locally |
 | Browser automation | Playwright | authenticated flows, deferred past MVP (docs/ROADMAP.md) |
-| Security tools | nmap, httpx, subfinder, katana, nuclei, ffuf, dalfox, sqlmap, semgrep | run as sandboxed subprocesses/containers via the Tool Orchestrator |
+| Security tools | nmap, httpx, subfinder, katana, nuclei, ffuf, dalfox, sqlmap, semgrep | all containerized via the Tool Orchestrator (docs/MVP.md #4) — ffuf has no maintained official image, so it's built locally from source (docker/tools/ffuf/Dockerfile) |
 
 ## Local model roles (when the LLM Router picks local)
 

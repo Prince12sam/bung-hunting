@@ -13,15 +13,13 @@ targets and real local repos. `es analyze` / `es fix` verified end-to-end
 or local model is set (docs/GETTING_STARTED.md) — everything else works
 without one.
 
-## Phase 2 — Tool Orchestrator — slice 1 done, expansion ongoing
+## Phase 2 — Tool Orchestrator — done
 
-Recon → active chain behind the scope gate. Slice 1 (httpx + nmap,
-declarative pipeline, scope gate enforced per-invocation) is built and
-verified end-to-end — see docs/MVP.md #4 for what was proven and what's
-still a stub. Next slice: add subfinder, katana, nuclei, ffuf, dalfox,
-sqlmap following the same `run_x` + `ToolStage` pattern. Success bar for
-calling Phase 2 fully done: `es scan` on a lab/authorized target produces
-findings you'd trust enough to put in a real report.
+Recon → active chain behind the scope gate. Full pipeline built and
+verified end-to-end: httpx, subfinder, katana, nmap, nuclei, ffuf, dalfox,
+sqlmap — see docs/MVP.md #4 for exactly what was proven for each. `es scan`
+on a lab/authorized target runs the whole chain; an unauthorized target is
+refused, not scanned.
 
 ## Phase 3 — Thin clients
 

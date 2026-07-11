@@ -29,7 +29,21 @@ class Settings(BaseSettings):
     # Pentest Agent / Tool Orchestrator (Phase 2)
     httpx_docker_image: str = "projectdiscovery/httpx:latest"
     nmap_docker_image: str = "instrumentisto/nmap:latest"
+    subfinder_docker_image: str = "projectdiscovery/subfinder:latest"
+    katana_docker_image: str = "projectdiscovery/katana:latest"
+    nuclei_docker_image: str = "projectdiscovery/nuclei:latest"
+    # No maintained official ffuf image exists on Docker Hub — built locally
+    # from source instead, see docker/tools/ffuf/Dockerfile.
+    ffuf_docker_image: str = "es/ffuf:local"
+    dalfox_docker_image: str = "hahwul/dalfox:latest"
+    sqlmap_docker_image: str = "googlesky/sqlmap:latest"
+
     tool_timeout_seconds: int = 180
+    # nuclei's first run per template-cache-volume downloads the templates
+    # repo; subsequent runs reuse the cache and are fast, but budget for a
+    # cold run.
+    nuclei_timeout_seconds: int = 300
+    ffuf_wordlist_path: str = "docker/tools/ffuf/wordlist.txt"
 
     # Every target must reach `verified` status via api/scope.py before any
     # active-scan tool call — see docs/SECURITY_AND_AUTHORIZATION.md.

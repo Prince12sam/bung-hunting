@@ -1,14 +1,14 @@
 # Getting Started
 
-Phase 1 (Agent Core + Memory + CLI: `analyze` / `fix`) and Phase 2 slice 1
-(Tool Orchestrator: `scan` with httpx + nmap) are both working — see
-docs/MVP.md for exact status and what's still deferred.
+Phase 1 (Agent Core + Memory + CLI: `analyze` / `fix`) and Phase 2 (Tool
+Orchestrator: `scan` with httpx, subfinder, katana, nmap, nuclei, ffuf,
+dalfox, sqlmap) are both done — see docs/MVP.md for exact status.
 
 ## Prerequisites
 
 - Python 3.11+
-- Docker Desktop (running) — used for Postgres+pgvector and for running
-  semgrep in a container (semgrep has no native Windows build)
+- Docker Desktop (running) — every external security tool (including
+  semgrep, which has no native Windows build) runs sandboxed in a container
 
 ## Setup
 
@@ -25,6 +25,9 @@ cd docker
 cp .env.example .env              # set a real ES_PG_PASSWORD — compose refuses to start without one
 docker compose up -d              # starts Postgres+pgvector on localhost:55432
 cd ..
+
+# ffuf has no maintained official Docker image — build it once from source:
+docker build -t es/ffuf:local docker/tools/ffuf
 ```
 
 ## Run the Agent Core
@@ -52,14 +55,16 @@ python -m cli.main verify-target some-target.example --token <token>
 
 ## Scanning a target you don't own
 
-`scan` runs the Tool Orchestrator's pipeline (currently httpx + nmap;
-docs/MVP.md #4 for what's next) — but only against targets the scope gate
-has verified (docs/SECURITY_AND_AUTHORIZATION.md). `localhost` and RFC1918
-addresses auto-verify since there's no third party to harm. Anything else
-needs the file-token method first: pick any token string, place it at
-`https://<target>/.well-known/es-auth.txt` on the target itself (proving
-you control it), then run `verify-target ... --token <same string>`. An
-unverified target isn't scanned — the CLI reports it as skipped, per stage.
+`scan` runs the full Tool Orchestrator pipeline (docs/MVP.md #4) — but only
+against targets the scope gate has verified (docs/SECURITY_AND_AUTHORIZATION.md).
+`localhost` and RFC1918 addresses auto-verify since there's no third party
+to harm. Anything else needs the file-token method first: pick any token
+string, place it at `https://<target>/.well-known/es-auth.txt` on the
+target itself (proving you control it), then run `verify-target ... --token
+<same string>`. An unverified target isn't scanned — the CLI reports it as
+skipped, per stage. Active-scan tools (nmap, nuclei, ffuf, dalfox, sqlmap)
+send real requests/payloads — only point `scan` at something you're
+actually authorized to test.
 
 ## Without an LLM key configured
 
