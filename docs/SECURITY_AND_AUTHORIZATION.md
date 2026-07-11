@@ -1,6 +1,6 @@
 # Security & Authorization Model
 
-Leviathan runs active security tooling (nmap, sqlmap, ffuf, nuclei active
+Es runs active security tooling (nmap, sqlmap, ffuf, nuclei active
 templates, authenticated Playwright automation). This doc is the gate that
 every one of those tools must pass through before it fires. Read this before
 writing any code that calls the Tool Orchestrator or the Pentest/Browser
@@ -27,10 +27,10 @@ Every target (domain, IP range, repo) has a **scope record** in Memory with:
 
 ### Verification methods (any one required to move a target to `verified`)
 
-1. **File token** — place a Leviathan-issued token at
-   `https://target/.well-known/leviathan-auth.txt`, same pattern as Google
+1. **File token** — place an Es-issued token at
+   `https://target/.well-known/es-auth.txt`, same pattern as Google
    Search Console / Burp Suite Enterprise domain verification.
-2. **DNS TXT record** — `_leviathan-auth.target` TXT record matching an
+2. **DNS TXT record** — `_es-auth.target` TXT record matching an
    issued token.
 3. **Signed engagement record** — for third-party pentest/bug-bounty work,
    the user attaches a scope document (e.g. a bug bounty program's published

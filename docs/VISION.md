@@ -1,6 +1,6 @@
 # Long-Term Vision
 
-This is the full picture Leviathan is aimed at eventually. It is **not**
+This is the full picture Es is aimed at eventually. It is **not**
 current scope — see docs/MVP.md for what's actually being built, and
 docs/ROADMAP.md for sequencing. Kept here so later phases have a fixed
 reference instead of relying on memory of the original pitch.

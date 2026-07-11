@@ -45,7 +45,8 @@ for a single user.
 
 - **Licensing model** — currently proprietary/private (see LICENSE). Revisit
   open-core vs. fully-closed once there's something worth commercializing.
-- **"Leviathan" naming** — common name in the security tooling space; do a
-  trademark/naming search before any public release (docs/REVIEW.md point 7).
+- **"Es" naming** — too short/generic to trademark or search reliably; pick a
+  more distinctive product name before any public release (docs/REVIEW.md
+  point 7).
 - **Team/multi-user Memory** — out of scope until Phase 5; current design
   assumes single-user local Memory.

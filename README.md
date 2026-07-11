@@ -1,6 +1,6 @@
-# Leviathan
+# Es
 
-Leviathan is a local-first "AI Security OS": a multi-agent platform that fuses
+Es is a local-first "AI Security OS": a multi-agent platform that fuses
 an AI coding assistant (Claude Code / Copilot / Cursor-style workflows) with a
 security testing toolchain (Burp Suite / Nuclei / Kali-style tooling) under
 one orchestration layer, driven by an LLM router with local-model fallback.

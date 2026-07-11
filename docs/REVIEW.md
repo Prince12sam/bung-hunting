@@ -1,4 +1,4 @@
-# Design Review: Original Leviathan Concept
+# Design Review: Original Es Concept
 
 This is a critical pass over the initial vision doc — what's sound, what's
 risky, and what changed in the docs that followed from it. Written before any
@@ -67,11 +67,12 @@ code exists, so it can still change cheaply.
    shared state. Aligns with this environment's own confirm-before-side-effect
    norms.
 
-7. **Name collision check**: "Leviathan" is a common name in the security
-   tooling space (there have been unrelated open-source projects using it
-   over the years). Not a blocker for a private/internal tool, but worth a
-   trademark/naming search before any public or commercial release — tracked
-   in docs/ROADMAP.md.
+7. **Name collision check**: "Es" is a two-letter/single-word name, which
+   makes it effectively unsearchable and unregisterable as a distinct
+   trademark (too short, too generic, high collision risk with unrelated
+   products called "Es" or "ES"). Not a blocker for a private/internal tool,
+   but a public or commercial release should pick a more distinctive product
+   name — tracked in docs/ROADMAP.md.
 
 ## Net effect
 
