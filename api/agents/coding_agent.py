@@ -3,10 +3,9 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from api.config import settings
 from api.llm_router import LLMUnavailable, complete
 from api.tool_router import ToolError, git_apply_patch, git_commit, run_semgrep, run_tests
-
-MAX_FINDINGS_FOR_PATCH = 5
 
 
 class AnalyzeState(TypedDict):
@@ -86,7 +85,7 @@ def _fix_patch_node(state: FixState) -> FixState:
     if state.get("error") or not state["findings"]:
         return {**state, "diff": ""}
 
-    findings = state["findings"][:MAX_FINDINGS_FOR_PATCH]
+    findings = state["findings"][: settings.fix_max_findings_per_patch]
     listing = "\n".join(
         f"- [{f['severity']}] {f['title']} ({f['file_path']}:{f['line']}) — {f['description']}"
         for f in findings

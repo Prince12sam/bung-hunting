@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from memory.models import Finding, Project
+from memory.models import Finding, Project, Target
 
 
 def get_or_create_project(session: Session, name: str, path: str) -> Project:
@@ -38,3 +38,28 @@ def save_findings(session: Session, project: Project, findings: list[dict]) -> l
 
 def list_findings_for_project(session: Session, project: Project) -> list[Finding]:
     return list(session.scalars(select(Finding).where(Finding.project_id == project.id)))
+
+
+def save_findings_for_target(session: Session, target: Target, findings: list[dict]) -> list[Finding]:
+    rows = []
+    for f in findings:
+        row = Finding(
+            target_id=target.id,
+            source_tool=f["source_tool"],
+            severity=f.get("severity", "info"),
+            title=f["title"],
+            description=f.get("description", ""),
+            file_path=f.get("file_path"),
+            line=f.get("line"),
+            sensitive=f.get("sensitive", False),
+        )
+        session.add(row)
+        rows.append(row)
+    session.commit()
+    for row in rows:
+        session.refresh(row)
+    return rows
+
+
+def list_findings_for_target(session: Session, target: Target) -> list[Finding]:
+    return list(session.scalars(select(Finding).where(Finding.target_id == target.id)))

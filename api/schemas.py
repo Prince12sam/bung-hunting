@@ -42,3 +42,24 @@ class FixApplyResponse(BaseModel):
     committed: bool
     test_output: str
     error: str | None = None
+
+
+class ScanRequest(BaseModel):
+    target: str
+
+
+class ScanResponse(BaseModel):
+    findings: list[Finding]
+    warnings: list[str]
+    summary: str
+
+
+class VerifyTargetRequest(BaseModel):
+    target: str
+    token: str
+
+
+class VerifyTargetResponse(BaseModel):
+    status: str
+    verification_method: str | None = None
+    error: str | None = None

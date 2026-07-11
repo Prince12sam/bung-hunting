@@ -59,20 +59,36 @@ security fix <path>         # analyze + patch + test, PR creation is opt-in per 
 target and a real local repo, end to end, with output a human can act on
 without reading raw tool logs.
 
-## 4. Tool Orchestrator
+## 4. Tool Orchestrator — status: slice 1 done (api/orchestrator.py)
 
-Coordinates external tools (nmap, httpx, subfinder, katana, nuclei, ffuf,
-dalfox, sqlmap, semgrep) behind one interface so the Agent Core never shells
-out directly. Responsibilities:
+Coordinates external tools behind one interface so the Agent Core never
+shells out directly. Responsibilities:
 
 - Normalizes each tool's output into one finding schema.
-- Enforces the scope/authorization gate per invocation, not just per session.
-- Rate-limits and sandboxes subprocess execution (containers where the tool
-  supports it).
+- Enforces the scope/authorization gate per invocation, not just per session
+  (api/scope.py — every stage calls `require_authorized` before it runs;
+  denials are recorded as warnings, not silent skips).
+- Sandboxes every tool in a container (Docker) — nothing shells out to a
+  host-installed binary.
 
-**Acceptance criteria:** `security scan` on a lab target runs the full chain
-and every finding lands in Memory with a consistent schema, regardless of
-which underlying tool produced it.
+**Shipped in slice 1:** httpx (passive HTTP fingerprinting) + nmap (active
+TCP scan), a declarative `PIPELINE` list in api/orchestrator.py (adding a
+tool is a data change, not a new if/else branch), and the scope model from
+docs/SECURITY_AND_AUTHORIZATION.md — local/private targets auto-verify,
+everything else needs `es verify-target` (file-token method) before active
+stages run. Verified end-to-end against `localhost` (real open ports
+found) and a scope-denial test against an unverified third-party domain
+(confirms the gate actually blocks, not just warns).
+
+**Deferred to a later slice:** subfinder, katana, nuclei, ffuf, dalfox,
+sqlmap. Each is: add a `run_x` in api/tool_router.py + a `ToolStage` entry
+in api/orchestrator.py's `PIPELINE` — the pattern is proven, this is now
+additive work, not architecture work.
+
+**Acceptance criteria (met for the shipped subset):** `es scan` on a
+localhost/lab target runs the pipeline and every finding lands in Memory
+with a consistent schema, regardless of which underlying tool produced it;
+an unauthorized target is refused rather than scanned.
 
 ## 5. VS Code Extension
 

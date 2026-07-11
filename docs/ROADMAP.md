@@ -1,21 +1,27 @@
 # Roadmap
 
-## Phase 0 — Documentation (current)
+## Phase 0 — Documentation — done
 
-This doc set. No code yet.
+This doc set.
 
-## Phase 1 — Usable loop
+## Phase 1 — Usable loop — done
 
 Agent Core + Memory + CLI, working end to end against real (owned/lab)
-targets and real local repos. Success bar: you reach for `security scan` /
-`security analyze` / `security fix` over doing the equivalent by hand,
-daily, yourself.
+targets and real local repos. `es analyze` / `es fix` verified end-to-end
+(docs/MVP.md #1-3). Remaining gap: no LLM provider configured yet, so
+`analyze` summaries and `fix` patch generation are inert until an API key
+or local model is set (docs/GETTING_STARTED.md) — everything else works
+without one.
 
-## Phase 2 — Tool Orchestrator
+## Phase 2 — Tool Orchestrator — slice 1 done, expansion ongoing
 
-Full recon → active chain behind the scope gate. Success bar: a `security
-scan` on a lab/authorized target produces findings you'd trust enough to
-put in a real report.
+Recon → active chain behind the scope gate. Slice 1 (httpx + nmap,
+declarative pipeline, scope gate enforced per-invocation) is built and
+verified end-to-end — see docs/MVP.md #4 for what was proven and what's
+still a stub. Next slice: add subfinder, katana, nuclei, ffuf, dalfox,
+sqlmap following the same `run_x` + `ToolStage` pattern. Success bar for
+calling Phase 2 fully done: `es scan` on a lab/authorized target produces
+findings you'd trust enough to put in a real report.
 
 ## Phase 3 — Thin clients
 

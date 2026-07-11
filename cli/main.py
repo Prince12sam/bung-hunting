@@ -89,12 +89,57 @@ def fix(
 
 @app.command()
 def scan(target: str = typer.Argument(..., help="Domain/IP/host to scan")) -> None:
-    """Orchestrator-driven recon + active scan chain — NOT YET IMPLEMENTED (Phase 2)."""
-    console.print(
-        "[yellow]`es scan` depends on the Tool Orchestrator, which is Phase 2 "
-        "work (see docs/ROADMAP.md). Not implemented yet.[/yellow]"
-    )
-    raise typer.Exit(1)
+    """Orchestrator-driven recon + active scan chain (Pentest Agent).
+
+    Active stages only run against targets verified in scope — see
+    docs/SECURITY_AND_AUTHORIZATION.md. Use `es verify-target` first for
+    anything that isn't your own machine/private network.
+    """
+    try:
+        result = post("/v1/scan", {"target": target})
+    except httpx.ConnectError:
+        _connection_error_hint()
+        raise typer.Exit(1)
+    except httpx.HTTPStatusError as exc:
+        console.print(f"[red]Agent Core error: {exc.response.text}[/red]")
+        raise typer.Exit(1)
+
+    for w in result["warnings"]:
+        console.print(f"[yellow]{w}[/yellow]")
+
+    findings = result["findings"]
+    if not findings:
+        console.print("[green]No findings.[/green]")
+    else:
+        table = Table(title=f"{len(findings)} finding(s)")
+        table.add_column("Tool")
+        table.add_column("Severity")
+        table.add_column("Title")
+        table.add_column("Description")
+        for f in findings:
+            table.add_row(f["source_tool"], f["severity"], f["title"], f["description"][:80])
+        console.print(table)
+
+    console.print("\n[bold]Summary[/bold]")
+    console.print(result["summary"])
+
+
+@app.command("verify-target")
+def verify_target(
+    target: str = typer.Argument(..., help="Domain/host to verify"),
+    token: str = typer.Option(..., "--token", help="Token placed at https://<target>/.well-known/es-auth.txt"),
+) -> None:
+    """Verify scope authorization via the file-token method before scanning a target you don't own."""
+    try:
+        result = post("/v1/targets/verify", {"target": target, "token": token})
+    except httpx.ConnectError:
+        _connection_error_hint()
+        raise typer.Exit(1)
+
+    if result.get("error"):
+        console.print(f"[red]{result['error']}[/red]")
+        raise typer.Exit(1)
+    console.print(f"[green]{target} is now {result['status']} ({result['verification_method']})[/green]")
 
 
 if __name__ == "__main__":

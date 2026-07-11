@@ -1,7 +1,8 @@
-# Getting Started (Phase 1)
+# Getting Started
 
-Phase 1 is Agent Core + Memory + CLI (`analyze` / `fix`) — see docs/MVP.md.
-`es scan` is a stub; it depends on the Phase 2 Tool Orchestrator.
+Phase 1 (Agent Core + Memory + CLI: `analyze` / `fix`) and Phase 2 slice 1
+(Tool Orchestrator: `scan` with httpx + nmap) are both working — see
+docs/MVP.md for exact status and what's still deferred.
 
 ## Prerequisites
 
@@ -21,7 +22,8 @@ cp .env.example .env             # then fill in ES_CODING_MODELS + a provider ke
                                   # just without LLM summaries/patches)
 
 cd docker
-docker compose up -d             # starts Postgres+pgvector on localhost:55432
+cp .env.example .env              # set a real ES_PG_PASSWORD — compose refuses to start without one
+docker compose up -d              # starts Postgres+pgvector on localhost:55432
 cd ..
 ```
 
@@ -42,7 +44,22 @@ python -m cli.main analyze path/to/code
 python -m cli.main fix path/to/repo              # proposes a patch, doesn't touch disk
 python -m cli.main fix path/to/repo --apply       # writes the patch, runs pytest
 python -m cli.main fix path/to/repo --apply --commit   # + commits if tests pass
+
+python -m cli.main scan localhost                # local/private targets auto-verify, scans immediately
+python -m cli.main scan some-target.example       # refused until verified (see below)
+python -m cli.main verify-target some-target.example --token <token>
 ```
+
+## Scanning a target you don't own
+
+`scan` runs the Tool Orchestrator's pipeline (currently httpx + nmap;
+docs/MVP.md #4 for what's next) — but only against targets the scope gate
+has verified (docs/SECURITY_AND_AUTHORIZATION.md). `localhost` and RFC1918
+addresses auto-verify since there's no third party to harm. Anything else
+needs the file-token method first: pick any token string, place it at
+`https://<target>/.well-known/es-auth.txt` on the target itself (proving
+you control it), then run `verify-target ... --token <same string>`. An
+unverified target isn't scanned — the CLI reports it as skipped, per stage.
 
 ## Without an LLM key configured
 
