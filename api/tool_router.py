@@ -1,5 +1,6 @@
 import json
 import subprocess
+import uuid
 from pathlib import Path
 
 from api.config import settings
@@ -26,14 +27,7 @@ def run_semgrep(path: Path) -> list[dict]:
         settings.semgrep_docker_image,
         "semgrep", "scan", "--config=auto", "--json", "--quiet", "/src",
     ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=settings.semgrep_timeout_seconds)
-    except FileNotFoundError as exc:
-        raise ToolError("docker CLI not found — Docker Desktop must be installed and running") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise ToolError(f"semgrep timed out after {settings.semgrep_timeout_seconds}s") from exc
-    result.stdout = result.stdout or ""
-    result.stderr = result.stderr or ""
+    result = _run_docker(cmd, "semgrep", timeout=settings.semgrep_timeout_seconds)
 
     # semgrep exits 1 when it finds issues — that's not a tool failure.
     if result.returncode not in (0, 1):
@@ -66,7 +60,8 @@ def git_apply_patch(repo_path: Path, diff_text: str) -> None:
         cwd=repo_path,
         input=diff_text,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode != 0:
         raise ToolError(f"git apply failed: {result.stderr.strip()}")
@@ -77,7 +72,8 @@ def run_tests(repo_path: Path) -> tuple[bool, str]:
         ["python", "-m", "pytest", "-q"],
         cwd=repo_path,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=settings.test_run_timeout_seconds,
     )
     return result.returncode == 0, ((result.stdout or "") + (result.stderr or ""))[-4000:]
@@ -85,17 +81,37 @@ def run_tests(repo_path: Path) -> tuple[bool, str]:
 
 def git_commit(repo_path: Path, message: str) -> None:
     subprocess.run(["git", "add", "-A"], cwd=repo_path, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", message], cwd=repo_path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=repo_path,
+        check=True,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
 
 
 def _run_docker(cmd: list[str], tool_name: str, timeout: int | None = None) -> subprocess.CompletedProcess:
+    """Every caller here builds cmd as ["docker", "run", "--rm", ...]. This
+    inserts an explicit --name so a timeout can actually stop the container.
+
+    Killing the local `docker run` client process (what subprocess.run's
+    timeout does by default) does NOT stop the container itself — it keeps
+    running server-side in Docker, unbounded, still hitting whatever target
+    it was pointed at. Found this the hard way: a dalfox run against a real
+    site outlived its 180s timeout by several minutes because nothing ever
+    told Docker to stop it.
+    """
     timeout = timeout if timeout is not None else settings.tool_timeout_seconds
+    container_name = f"es-{tool_name}-{uuid.uuid4().hex[:12]}"
+    named_cmd = cmd[:3] + ["--name", container_name] + cmd[3:]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(named_cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
     except FileNotFoundError as exc:
         raise ToolError("docker CLI not found — Docker Desktop must be installed and running") from exc
     except subprocess.TimeoutExpired as exc:
-        raise ToolError(f"{tool_name} timed out after {timeout}s") from exc
+        subprocess.run(["docker", "kill", container_name], capture_output=True)
+        raise ToolError(f"{tool_name} timed out after {timeout}s (container stopped)") from exc
     # Under concurrent docker invocations (multiple scans in flight at once,
     # each spawning subprocesses from FastAPI's threadpool), stdout/stderr
     # have been observed coming back None despite capture_output=True/
