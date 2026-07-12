@@ -3,7 +3,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from cli.client import BASE_URL, post
+from cli.client import BASE_URL, SCAN_TIMEOUT, post
 
 app = typer.Typer(add_completion=False, help="Es — local AI security platform CLI (Phase 1: MVP)")
 console = Console()
@@ -133,10 +133,21 @@ def scan(
         attest = post("/v1/targets/self-attest", {"target": target, "statement": statement})
         console.print(f"[dim]Recorded: {attest['verification_method']}[/dim]")
 
+    console.print(
+        "[dim]Running the full pipeline — against a real site this can take several "
+        "minutes (nuclei alone can run ~3000 requests).[/dim]"
+    )
     try:
-        result = post("/v1/scan", {"target": target})
+        result = post("/v1/scan", {"target": target}, timeout=SCAN_TIMEOUT)
     except httpx.ConnectError:
         _connection_error_hint()
+        raise typer.Exit(1)
+    except httpx.ReadTimeout:
+        console.print(
+            f"[red]No response after {SCAN_TIMEOUT}s.[/red] The scan may still be running "
+            "server-side — the Agent Core doesn't cancel work just because the CLI stopped "
+            "waiting. Check its findings later rather than re-running immediately."
+        )
         raise typer.Exit(1)
     except httpx.HTTPStatusError as exc:
         console.print(f"[red]Agent Core error: {exc.response.text}[/red]")

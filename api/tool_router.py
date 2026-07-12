@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -69,7 +70,10 @@ def git_apply_patch(repo_path: Path, diff_text: str) -> None:
 
 def run_tests(repo_path: Path) -> tuple[bool, str]:
     result = subprocess.run(
-        ["python", "-m", "pytest", "-q"],
+        # sys.executable, not the literal "python": that name isn't
+        # guaranteed on PATH (many Linux distros only ship "python3"), and
+        # this also guarantees the same interpreter/venv Es itself runs in.
+        [sys.executable, "-m", "pytest", "-q"],
         cwd=repo_path,
         capture_output=True,
         encoding="utf-8",
@@ -110,8 +114,16 @@ def _run_docker(cmd: list[str], tool_name: str, timeout: int | None = None) -> s
     except FileNotFoundError as exc:
         raise ToolError("docker CLI not found — Docker Desktop must be installed and running") from exc
     except subprocess.TimeoutExpired as exc:
-        subprocess.run(["docker", "kill", container_name], capture_output=True)
-        raise ToolError(f"{tool_name} timed out after {timeout}s (container stopped)") from exc
+        # Best-effort cleanup only — this must never itself hang the request.
+        # `docker kill` with no timeout of its own did exactly that under
+        # heavy concurrent load: the outer timeout fired, but the cleanup
+        # call blocked for close to an hour instead of the ToolError below
+        # ever getting raised.
+        try:
+            subprocess.run(["docker", "kill", container_name], capture_output=True, timeout=15)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        raise ToolError(f"{tool_name} timed out after {timeout}s (container stop attempted)") from exc
     # Under concurrent docker invocations (multiple scans in flight at once,
     # each spawning subprocesses from FastAPI's threadpool), stdout/stderr
     # have been observed coming back None despite capture_output=True/
