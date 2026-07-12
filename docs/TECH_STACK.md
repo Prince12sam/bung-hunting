@@ -12,8 +12,9 @@
 | Browser extension | Chrome only (Manifest V3) | thin client, Phase 3; Firefox deferred |
 | Database | PostgreSQL + pgvector | structured data + embeddings, one store |
 | Offline fallback | SQLite | only when Postgres isn't running locally |
-| Browser automation | Playwright | authenticated flows, deferred past MVP (docs/ROADMAP.md) |
+| Browser automation | Playwright | authenticated flows; Phase 4 item 3, gated by the `local-automation` action class (docs/SECURITY_AND_AUTHORIZATION.md), not just deferred-and-unspecified |
 | Security tools | nmap, httpx, subfinder, katana, nuclei, ffuf, dalfox, sqlmap, semgrep | all containerized via the Tool Orchestrator (docs/MVP.md #4) — ffuf has no maintained official image, so it's built locally from source (docker/tools/ffuf/Dockerfile) |
+| Burp Suite | REST API (Professional/Enterprise) | Phase 4 item 2 — a new Tool Orchestrator stage, same `run_x` + `ToolStage` pattern as the tools above, not a separate integration mechanism |
 
 ## Local model roles (when the LLM Router picks local)
 

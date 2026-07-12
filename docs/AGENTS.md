@@ -16,9 +16,14 @@ know how to do another specialist's job.
 ### Pentest Agent
 - **Tools:** the Tool Orchestrator's active chain (nmap, httpx, subfinder,
   katana, nuclei, ffuf, dalfox, sqlmap) — every call gated by scope
-  verification.
+  verification. Burp Suite integration (docs/ROADMAP.md Phase 4 item 2) is
+  a planned addition to this same chain, same gate.
 - **Flow:** recon → surface mapping → targeted active testing → findings to
   Memory.
+- **Posture:** detection, not exploitation-to-completion — today's active
+  tools run at conservative settings that report a likely issue rather than
+  confirm it by fully exploiting it. A stricter-gated opt-in exploitation
+  tier is docs/ROADMAP.md Phase 4 item 10, not part of this agent as built.
 - **Backs:** `security scan`.
 
 ### Browser Agent
@@ -30,21 +35,41 @@ know how to do another specialist's job.
   active step as an explicit choice (not an implicit auto-run).
 - **Backs:** browser extension.
 
-## Deferred agents (post-MVP, see docs/ROADMAP.md)
+## Deferred agents (post-MVP, see docs/ROADMAP.md for sequencing/rationale)
 
-- **Bug Hunting Agent** — orchestrates Pentest + Browser agents against a
-  defined bug-bounty scope with a checkpoint before any active submission.
-- **Reverse Engineering Agent** — static/dynamic binary analysis, sandboxed.
-- **SOC Agent** — log/alert triage, correlation, playbook suggestions.
-- **Cloud Agent** — AWS/Azure/GCP misconfiguration review, IaC (Terraform/
-  Kubernetes) review.
-- **IAM Agent** — Active Directory and identity/access assessments.
-- **OSINT Agent** — public-source enumeration, kept strictly passive.
-- **Malware Agent** — sample triage in an isolated sandbox only, never given
-  network access to the host machine.
 - **Report Agent** — turns Memory findings into a reproducible report with
   evidence links; only worth building once there's enough real finding
   volume flowing through Memory to report on.
+- **Browser Automation Agent** — Playwright-driven authenticated testing:
+  login, click, fill forms, navigate, capture traffic. Gated by the
+  `local-automation` action class (docs/SECURITY_AND_AUTHORIZATION.md) on
+  top of the normal target-scope check, since it acts on a real
+  authenticated session, not just a passive page load. Distinct from the
+  MVP Browser Agent above (which is passive-only, in-browser-extension).
+- **Bug Hunting Agent** — orchestrates Pentest + Browser Automation (+ Burp
+  Suite) agents against a defined bug-bounty scope with a checkpoint before
+  any active submission. Waits on those to exist to compose.
+- **Malware/Document Analysis Sandbox Agent** — opens and detonates
+  suspicious files (documents, binaries) in an isolated sandbox only, never
+  given network access to the host machine. This is the one place "open a
+  document" is safe by construction — the document never reaches a real
+  filesystem or application.
+- **Local Automation / Computer-Use Agent** — general desktop control:
+  launching arbitrary applications, opening arbitrary files, driving GUIs
+  beyond what the sandboxed agent above or a Playwright browser session
+  cover. Deliberately last to build: highest risk, most exposed to prompt
+  injection (a malicious page/document tricking the agent into a real
+  local action), and needs the `local-automation` grant mechanism actually
+  designed first (docs/ROADMAP.md open decisions), not just gated in
+  principle.
+- **Cloud Agent** — AWS/Azure/GCP misconfiguration review, IaC (Terraform/
+  Kubernetes) review.
+- **IAM Agent** — Active Directory and identity/access assessments.
+- **SOC Agent** — log/alert triage, correlation, playbook suggestions.
+- **OSINT Agent** — public-source enumeration, kept strictly passive.
+- **Reverse Engineering Agent** — static/dynamic binary analysis, sandboxed;
+  overlaps with the Malware/Document Sandbox Agent above and may merge with
+  it rather than staying separate.
 
 ## Master Agent
 

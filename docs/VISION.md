@@ -23,8 +23,13 @@ fallback.
 ## Full agent roster
 
 Master Agent routing to: Coding, Pentest, Bug Hunting, Reverse Engineering,
-SOC, Cloud, IAM, OSINT, Malware, Report, Browser. Detail per agent, and
-which are MVP vs. deferred, in docs/AGENTS.md.
+SOC, Cloud, IAM, OSINT, Malware/Document Sandbox, Report, Browser, Local
+Automation. Detail per agent, and which are MVP vs. deferred, in
+docs/AGENTS.md; the last two (Malware/Document Sandbox, Local Automation)
+are the "open documents/applications" capability split into a safe half
+(sandboxed detonation, no host network) and a genuinely higher-risk half
+(real desktop control), on purpose — see docs/SECURITY_AND_AUTHORIZATION.md's
+`local-automation` action class for why they aren't one agent.
 
 ## Browser Agent — full passive check list
 
@@ -39,11 +44,18 @@ enumeration) as an explicit, gated next step, never automatic
 
 ```
 nmap → httpx → subfinder → katana → nuclei → ffuf → dalfox → sqlmap
-→ custom scripts → LLM analysis
+→ Burp Suite → custom scripts → LLM analysis
 ```
 
 The Tool Orchestrator (docs/MVP.md #4) decides the chain per target; the
-user doesn't manually pick tools.
+user doesn't manually pick tools. Burp Suite integration (docs/ROADMAP.md
+Phase 4 item 2) is a new Tool Orchestrator stage like any other — same
+`run_x` + `ToolStage` pattern already proven for the 8 tools above, wired
+to Burp's REST API (Professional/Enterprise) rather than a bare CLI. All
+of today's active tools run at conservative/detection settings; a future
+opt-in exploitation tier (docs/ROADMAP.md Phase 4 item 10) is a separate,
+more strictly gated escalation, not something Burp's addition changes by
+itself.
 
 ## Coding Agent — full flow
 
@@ -60,9 +72,28 @@ exploits, reports, screenshots.
 ## Browser automation
 
 Playwright-driven authenticated testing: login, click, fill forms, navigate,
-capture traffic, analyze. Deferred past MVP — this is powerful and also the
-highest-risk surface for accidentally acting on a live account, so it waits
-until the scope-gate and audit-log infrastructure (Phase 2) is proven.
+capture traffic, analyze. This is powerful and also a real risk surface for
+accidentally acting on a live account, so it's gated by the
+`local-automation` action class (docs/SECURITY_AND_AUTHORIZATION.md) on top
+of the normal target-scope check — an authenticated session needs its own
+explicit grant, not just a verified domain. Scheduled as docs/ROADMAP.md
+Phase 4 item 3, after Burp Suite integration (item 2) but before the Bug
+Hunting Agent (item 4) that composes it with the Pentest Agent.
+
+## Local Automation / Computer-Use Agent
+
+The other half of "open documents/applications": general desktop control
+beyond a sandboxed browser session or an isolated malware-detonation
+chamber — launching arbitrary applications, opening arbitrary files,
+driving GUIs. Deliberately the last agent in the roadmap
+(docs/ROADMAP.md Phase 4 item 9): it's the highest-risk, most novel
+capability here, and the one most exposed to prompt injection, since a
+malicious page or document could try to trick the agent into taking a
+real action on the user's actual desktop. Requires a concrete
+`local-automation` grant design (docs/ROADMAP.md's open decisions) before
+any implementation starts — the principle (same gate, extended; no
+default-on; isolation and authorization are both required, neither
+substitutes for the other) is decided, the mechanism isn't.
 
 ## Knowledge base
 
@@ -75,7 +106,11 @@ agents.
 
 - Voice commands ("Scan this application.")
 - Autonomous bug bounty workflows with approval checkpoints
-- Malware reverse engineering assistants (sandboxed, no host network access)
+- Malware/document analysis sandbox (sandboxed, no host network access)
+- General computer-use / desktop automation (docs/ROADMAP.md Phase 4 item 9
+  — gated by the `local-automation` action class, not assumed safe because
+  it's local)
+- Burp Suite and similar tool integrations via the Tool Orchestrator
 - Cloud misconfiguration analysis (AWS, Azure, GCP)
 - Infrastructure-as-Code review (Terraform, Kubernetes)
 - Active Directory and IAM assessments

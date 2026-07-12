@@ -32,7 +32,7 @@ Every target (domain, IP range, repo) has a **scope record** in Memory with:
 - `status`: `unverified` | `verified` | `revoked`
 - `verification_method`: how ownership/authorization was established
 - `authorized_actions`: which action classes are allowed (passive-recon,
-  active-scan, exploit, authenticated-browsing)
+  active-scan, exploit, local-automation — see below for the last one)
 - `expires_at`: scope records expire; stale authorization is treated as none
 
 ### Verification methods (any one required to move a target to `verified`)
@@ -68,8 +68,9 @@ Every target (domain, IP range, repo) has a **scope record** in Memory with:
 
 ### What the gate blocks
 
-- Any `active-scan` or `exploit` class action against a target that is
-  `unverified` or `revoked`, regardless of what the agent's plan says.
+- Any `active-scan`, `exploit`, or `local-automation` class action against
+  a target that is `unverified` or `revoked`, regardless of what the
+  agent's plan says.
 - Any action against a target once `expires_at` has passed, until
   re-verified.
 - Silent scope expansion — if recon discovers a new subdomain/host, it
@@ -81,6 +82,43 @@ Every target (domain, IP range, repo) has a **scope record** in Memory with:
 - Passive/read-only checks (headers, robots.txt, sitemap.xml, public JS
   parsing, WAF fingerprinting) — these are equivalent to a browser page load
   and carry no additional risk.
+
+## The `local-automation` action class (principle stated, not yet built)
+
+docs/ROADMAP.md Phase 4 plans a Browser Automation Agent (Playwright:
+login, click, navigate, capture traffic) and a Local Automation /
+Computer-Use Agent (opening applications/files, driving GUIs beyond a
+sandboxed browser or malware-detonation chamber). Both are a different
+shape of risk than scanning a remote target: they act *on the local
+machine or a real authenticated session*, and both are exactly the kind
+of capability a prompt-injected page or a malicious document could try to
+turn against the user directly.
+
+The principle, decided now so it isn't improvised later under
+implementation pressure: **the same gate, not a special case.**
+
+- Extend the existing `require_authorized` mechanism with a
+  `local-automation` action class rather than inventing a parallel,
+  weaker check "because it's local." Local isn't automatically safe —
+  it's the user's own session, files, and desktop, which is arguably
+  higher-stakes than an isolated remote scan, not lower.
+- No default-on. An agent deciding a task "probably needs" browser or
+  desktop control is exactly the conversational-approval failure mode the
+  Core rule above already rules out — this needs its own explicit grant,
+  the same way `es scan` needs a verified Target row before nmap runs.
+- Sandboxing still applies underneath the gate, not instead of it: the
+  Malware/Document Sandbox Agent's "no host network access, full stop"
+  rule (below) is what makes documents genuinely safe to open, independent
+  of whether the authorization step is also correct. Authorization and
+  isolation are both required, neither substitutes for the other.
+
+**Not yet decided** (tracked in docs/ROADMAP.md's open decisions, needed
+before Phase 4 item 9 starts): what "target" means for an action that
+isn't a remote host — a URL for authenticated browsing fits the existing
+Target model fine, but "open this local file" or "launch this
+application" doesn't obviously reduce to a domain/IP. Likely shape: a
+grant scoped to a specific task or session rather than a persistent Target
+row, but that's a real design exercise, not a one-line addition.
 
 ## Secrets and data egress
 
@@ -104,8 +142,17 @@ Every target (domain, IP range, repo) has a **scope record** in Memory with:
 - Subprocess/container isolation for every external tool the Tool
   Orchestrator runs — no active tool runs with the same privileges as the
   Agent Core process.
-- Malware/RE Agent (post-MVP) gets no network access to the host machine,
-  full stop — samples are detonated in an isolated sandbox only.
+- Malware/Document Analysis Sandbox Agent (post-MVP) gets no network access
+  to the host machine, full stop — samples and suspicious documents are
+  detonated/opened in an isolated sandbox only, never on the real
+  filesystem or a real application. This is what makes "open a document"
+  safe by construction for that one agent; it is not a general license for
+  other agents to open arbitrary files outside a sandbox.
+- The Local Automation / Computer-Use Agent (docs/ROADMAP.md Phase 4 item
+  9) has no such blanket isolation available to it by definition — driving
+  a real desktop means touching real applications and real files. That's
+  exactly why it's gated by its own `local-automation` authorization grant
+  above, rather than assumed safe because it runs locally.
 
 ## Legal
 
