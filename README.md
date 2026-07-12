@@ -15,14 +15,18 @@ built first and why.
 
 ## Status
 
-Documentation / design phase. No code yet. This README and the `docs/`
-directory are the source of truth for scope until implementation starts.
+Phase 1 (Agent Core + Memory + CLI) and Phase 2 (Tool Orchestrator) are
+built and verified end-to-end, including against a real live target, not
+just synthetic fixtures — see docs/MVP.md and docs/ROADMAP.md for exact
+status. Start with docs/GETTING_STARTED.md to actually run it.
 
 ## Start here
 
 | Doc | What it covers |
 |---|---|
-| [docs/MVP.md](docs/MVP.md) | The 6 components being built first, in order, with acceptance criteria |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Setup and usage — start here to actually run Es |
+| [docs/LINUX.md](docs/LINUX.md) | What's different (and what's still unverified) running on Linux |
+| [docs/MVP.md](docs/MVP.md) | The 6 components, in order, with acceptance criteria and what's actually been proven for each |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Agent core, tool router, LLM router, memory — how the pieces fit |
 | [docs/AGENTS.md](docs/AGENTS.md) | The specialized agent roster (Coding, Pentest, Browser, SOC, Cloud, ...) |
 | [docs/TECH_STACK.md](docs/TECH_STACK.md) | Chosen stack per component, with what was deliberately cut from the original list and why |

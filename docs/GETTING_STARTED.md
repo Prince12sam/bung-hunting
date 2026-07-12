@@ -4,18 +4,27 @@ Phase 1 (Agent Core + Memory + CLI: `analyze` / `fix`) and Phase 2 (Tool
 Orchestrator: `scan` with httpx, subfinder, katana, nmap, nuclei, ffuf,
 dalfox, sqlmap) are both done — see docs/MVP.md for exact status.
 
+Written and verified on Windows; see docs/LINUX.md for what's different
+(and what's still unverified) running this on Linux.
+
 ## Prerequisites
 
 - Python 3.11+
-- Docker Desktop (running) — every external security tool (including
-  semgrep, which has no native Windows build) runs sandboxed in a container
+- Docker running — every external security tool (including semgrep, which
+  has no native Windows build) runs sandboxed in a container. On Windows/Mac
+  that's Docker Desktop; on Linux, the native Docker daemon (see
+  docs/LINUX.md — no Docker Desktop needed, and fewer quirks than Windows)
 
 ## Setup
 
 ```
 python -m venv .venv
-.venv\Scripts\activate          # Windows
+
+.venv\Scripts\activate           # Windows
+source .venv/bin/activate        # Linux/Mac
+
 pip install -r requirements.txt
+pip install -e .                 # registers the `es` command (pyproject.toml)
 
 cp .env.example .env             # then fill in ES_CODING_MODELS + a provider key
                                   # (optional — analyze/fix work without one,
@@ -42,15 +51,18 @@ stabilizes — see docs/ROADMAP.md).
 
 ## Use the CLI
 
-```
-python -m cli.main analyze path/to/code
-python -m cli.main fix path/to/repo              # proposes a patch, doesn't touch disk
-python -m cli.main fix path/to/repo --apply       # writes the patch, runs pytest
-python -m cli.main fix path/to/repo --apply --commit   # + commits if tests pass
+Either `es <command>` (after `pip install -e .`) or `python -m cli.main
+<command>` — identical, the installed command is just a shortcut.
 
-python -m cli.main scan localhost                # local/private targets auto-verify, scans immediately
-python -m cli.main scan some-target.example       # prompts for self-attestation (see below)
-python -m cli.main verify-target some-target.example --token <token>   # stronger, provable verification
+```
+es analyze path/to/code
+es fix path/to/repo              # proposes a patch, doesn't touch disk
+es fix path/to/repo --apply       # writes the patch, runs pytest
+es fix path/to/repo --apply --commit   # + commits if tests pass
+
+es scan localhost                # local/private targets auto-verify, scans immediately
+es scan some-target.example       # prompts for self-attestation (see below)
+es verify-target some-target.example --token <token>   # stronger, provable verification
 ```
 
 ## Scanning a target you don't own
@@ -93,3 +105,16 @@ if none is configured.
 - Findings are persisted to Memory (Postgres) keyed by project name. If
   Postgres isn't reachable, `analyze`/`fix` still work — you just won't get
   cross-session recall of past findings.
+- **Give Docker at least ~6-8GB of RAM.** Found this the hard way: with
+  Docker Desktop's default ~2GB, `scan`'s later stages (nuclei, dalfox,
+  sqlmap running back to back against a real site) got erratic multi-minute
+  to hour-long hangs under memory pressure — not a code bug, the containers
+  themselves were starved. Docker Desktop: Settings → Resources → Memory.
+  Native Linux Docker isn't capped the same way by default, but the same
+  tools still need real memory to run several at once without contention.
+- A `scan` against a real, content-heavy site can legitimately take several
+  minutes end-to-end (nuclei alone can run ~3000 requests) — the CLI waits
+  up to 30 minutes for it. If you scan the same real site again immediately
+  after, expect thinner results: many sites start rate-limiting/blocking
+  after an intensive first pass, which is the target defending itself, not
+  a bug here.
