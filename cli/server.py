@@ -20,8 +20,8 @@ import httpx
 
 from api.config import settings
 
-PID_FILE = Path.home() / ".es" / "agent-core.pid"
-LOG_FILE = Path.home() / ".es" / "agent-core.log"
+PID_FILE = Path.home() / ".scorpion" / "agent-core.pid"
+LOG_FILE = Path.home() / ".scorpion" / "agent-core.log"
 
 
 def _pid_exists(pid: int) -> bool:
@@ -67,7 +67,7 @@ def start(foreground: bool = False) -> tuple[bool, str]:
     cmd = [sys.executable, "-m", "uvicorn", "api.main:app", "--host", settings.host, "--port", str(settings.port)]
 
     if foreground:
-        os.execvp(cmd[0], cmd)  # replaces this process entirely — used for `es serve --foreground`
+        os.execvp(cmd[0], cmd)  # replaces this process entirely — used for `scorpion serve --foreground`
 
     kwargs: dict = {}
     if sys.platform == "win32":

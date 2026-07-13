@@ -1,7 +1,7 @@
 # Getting Started
 
-Es is a local AI security platform: a Coding Agent (`analyze`/`fix`) and a
-Pentest Agent (`scan`, chaining httpx, subfinder, katana, nmap, nuclei,
+Scorpion is a local-first AI security platform: a Coding Agent (`analyze`/`fix`)
+and a Pentest Agent (`scan`, chaining httpx, subfinder, katana, nmap, nuclei,
 ffuf, dalfox, sqlmap) behind one CLI, with an LLM router that works with
 either a cloud provider or a local model (Ollama).
 
@@ -27,9 +27,9 @@ python -m venv .venv
 source .venv/bin/activate        # Linux/Mac
 
 pip install -r requirements.txt
-pip install -e .                 # registers the `es` command (pyproject.toml)
+pip install -e .                 # registers the `scorpion` command (pyproject.toml)
 
-cp .env.example .env             # then fill in ES_CODING_MODELS + a provider key
+cp .env.example .env             # then fill in SCORPION_CODING_MODELS + a provider key
                                   # (optional — analyze/fix work without one,
                                   # just without LLM summaries/patches)
 
@@ -39,16 +39,16 @@ docker compose up -d              # starts Postgres+pgvector on localhost:55432
 cd ..
 
 # ffuf has no maintained official Docker image — build it once from source:
-docker build -t es/ffuf:local docker/tools/ffuf
+docker build -t scorpion/ffuf:local docker/tools/ffuf
 ```
 
 ## Run the Agent Core
 
 ```
-es serve              # starts detached, tracked by a PID file
-es status             # check it's up and healthy
-es stop               # stop it cleanly
-es serve --foreground # or run attached to this terminal instead
+scorpion serve              # starts detached, tracked by a PID file
+scorpion status             # check it's up and healthy
+scorpion stop                # stop it cleanly
+scorpion serve --foreground  # or run attached to this terminal instead
 ```
 
 On first startup it creates the `vector` extension and all Postgres
@@ -57,14 +57,14 @@ tables if they don't exist yet.
 ## Use the CLI
 
 ```
-es analyze path/to/code
-es fix path/to/repo              # proposes a patch, doesn't touch disk
-es fix path/to/repo --apply       # writes the patch, runs pytest
-es fix path/to/repo --apply --commit   # + commits if tests pass
+scorpion analyze path/to/code
+scorpion fix path/to/repo              # proposes a patch, doesn't touch disk
+scorpion fix path/to/repo --apply       # writes the patch, runs pytest
+scorpion fix path/to/repo --apply --commit   # + commits if tests pass
 
-es scan localhost                # local/private targets auto-verify, scans immediately
-es scan some-target.example       # prompts for self-attestation (see below)
-es verify-target some-target.example --token <token>   # stronger, provable verification
+scorpion scan localhost                # local/private targets auto-verify, scans immediately
+scorpion scan some-target.example       # prompts for self-attestation (see below)
+scorpion verify-target some-target.example --token <token>   # stronger, provable verification
 ```
 
 `scan` shows live stage-by-stage progress (which of the 8 tools is
@@ -85,13 +85,13 @@ paths:
   statement of that authorization. Both are logged against the target (a
   false attestation is attributable later, unlike an unlogged chat "yes")
   and the verification expires after 1 day by default
-  (`ES_SELF_ATTEST_TTL_DAYS`) — short on purpose, since there's no
+  (`SCORPION_SELF_ATTEST_TTL_DAYS`) — short on purpose, since there's no
   technical proof behind it. For scripting, skip the prompt with
   `scan <target> --self-attest "reason"`.
 - **File-token (slower, provable)** — pick any token string, place it at
-  `https://<target>/.well-known/es-auth.txt` on the target itself (proving
-  you control it), then run `verify-target <target> --token <same
-  string>`. Verification lasts 30 days (`ES_SCOPE_VERIFICATION_TTL_DAYS`).
+  `https://<target>/.well-known/scorpion-auth.txt` on the target itself
+  (proving you control it), then run `verify-target <target> --token <same
+  string>`. Verification lasts 30 days (`SCORPION_SCOPE_VERIFICATION_TTL_DAYS`).
 
 Either way, an unverified target isn't scanned — the CLI reports it as
 skipped, per stage, until one of the above succeeds. Active-scan tools
@@ -104,8 +104,8 @@ authorize something you're actually allowed to test.
 explains that no LLM is configured instead of a real summary. `fix` requires
 an LLM (semgrep alone doesn't write patches) and will return a clear error
 if none is configured. Every LLM call — cloud or local — is bounded by a
-hard timeout (`ES_LLM_CALL_TIMEOUT_SECONDS`, default 60s) enforced in code,
-independent of whether the underlying provider honors its own timeout
+hard timeout (`SCORPION_LLM_CALL_TIMEOUT_SECONDS`, default 60s) enforced in
+code, independent of whether the underlying provider honors its own timeout
 setting.
 
 ## Notes

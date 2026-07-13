@@ -45,7 +45,7 @@ def complete(messages: list[dict], purpose: str = "coding") -> str:
     models = settings.coding_models if purpose == "coding" else settings.fast_models
     if not models:
         raise LLMUnavailable(
-            "No LLM provider configured. Set ES_CODING_MODELS (and the "
+            "No LLM provider configured. Set SCORPION_CODING_MODELS (and the "
             "matching provider API key) in .env — see docs/GETTING_STARTED.md"
         )
 

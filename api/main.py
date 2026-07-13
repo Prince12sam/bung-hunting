@@ -8,7 +8,7 @@ from memory.db import init_db
 
 logger = logging.getLogger("es.api")
 
-app = FastAPI(title="Es Agent Core", version="0.1.0")
+app = FastAPI(title="Scorpion Agent Core", version="2.0.0")
 app.include_router(tasks_router)
 app.include_router(scan_router)
 

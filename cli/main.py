@@ -9,14 +9,14 @@ from rich.table import Table
 from cli import server as server_lifecycle
 from cli.client import BASE_URL, SCAN_TIMEOUT, get as http_get, post
 
-app = typer.Typer(add_completion=False, help="Es — local AI security platform CLI (Phase 1: MVP)")
+app = typer.Typer(add_completion=False, help="Scorpion v2 — local AI security platform CLI")
 console = Console()
 
 
 def _connection_error_hint() -> None:
     console.print(
-        f"[red]Could not reach the Es Agent Core at {BASE_URL}.[/red]\n"
-        "Start it: [bold]es serve[/bold]"
+        f"[red]Could not reach the Scorpion Agent Core at {BASE_URL}.[/red]\n"
+        "Start it: [bold]scorpion serve[/bold]"
     )
 
 
@@ -36,7 +36,7 @@ def serve(
 
 @app.command()
 def stop() -> None:
-    """Stop a background Agent Core started with `es serve`."""
+    """Stop a background Agent Core started with `scorpion serve`."""
     ok, message = server_lifecycle.stop()
     console.print(f"[green]{message}[/green]" if ok else f"[yellow]{message}[/yellow]")
 
@@ -130,10 +130,10 @@ def scan(
 ) -> None:
     """Orchestrator-driven recon + active scan chain (Pentest Agent).
 
-    Active stages only run against targets verified in scope — see
-    docs/SECURITY_AND_AUTHORIZATION.md. `localhost`/private IPs auto-verify.
-    Anything else prompts for self-attestation (weak, logged) or use
-    `es verify-target` first for a real, provable verification.
+    Active stages only run against targets verified in scope.
+    `localhost`/private IPs auto-verify. Anything else prompts for
+    self-attestation (weak, logged) or use `scorpion verify-target` first
+    for a real, provable verification.
     """
     try:
         status = post("/v1/targets/status", {"target": target})
@@ -146,7 +146,7 @@ def scan(
         if not statement:
             console.print(
                 f"[yellow]Target '{target}' isn't verified — no one has technically proven "
-                "control over it (see docs/SECURITY_AND_AUTHORIZATION.md).[/yellow]"
+                "control over it.[/yellow]"
             )
             if not typer.confirm(
                 f"Do you personally attest that you own or are explicitly authorized to test "
@@ -154,7 +154,7 @@ def scan(
             ):
                 console.print(
                     "Not scanning. For a stronger, provable verification instead, use "
-                    "[bold]es verify-target[/bold] (file-token method)."
+                    "[bold]scorpion verify-target[/bold] (file-token method)."
                 )
                 raise typer.Exit(1)
             statement = typer.prompt(
@@ -239,7 +239,7 @@ def scan(
 @app.command("verify-target")
 def verify_target(
     target: str = typer.Argument(..., help="Domain/host to verify"),
-    token: str = typer.Option(..., "--token", help="Token placed at https://<target>/.well-known/es-auth.txt"),
+    token: str = typer.Option(..., "--token", help="Token placed at https://<target>/.well-known/scorpion-auth.txt"),
 ) -> None:
     """Verify scope authorization via the file-token method before scanning a target you don't own."""
     try:

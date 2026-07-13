@@ -107,7 +107,7 @@ def _run_docker(cmd: list[str], tool_name: str, timeout: int | None = None) -> s
     told Docker to stop it.
     """
     timeout = timeout if timeout is not None else settings.tool_timeout_seconds
-    container_name = f"es-{tool_name}-{uuid.uuid4().hex[:12]}"
+    container_name = f"scorpion-{tool_name}-{uuid.uuid4().hex[:12]}"
     named_cmd = cmd[:3] + ["--name", container_name] + cmd[3:]
     try:
         result = subprocess.run(named_cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)

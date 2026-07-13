@@ -6,8 +6,8 @@ This is where the project was originally built, so it's the most heavily
 tested platform.
 
 **Status: fully verified.** `analyze`, `fix`, `scan` (including full
-8-tool runs against real live sites), `es serve`/`stop`/`status`, and both
-cloud and local (Ollama) LLM backends have all been run for real here.
+8-tool runs against real live sites), `scorpion serve`/`stop`/`status`, and
+both cloud and local (Ollama) LLM backends have all been run for real here.
 
 ## Prerequisites — the part that actually caused problems
 
@@ -45,7 +45,7 @@ Resources → Memory, raise to 6-8GB or more if you have it. Confirmed fix:
 the exact same test suite that took 45+ minutes and failed under low
 memory ran clean in under 5 minutes after raising it.
 
-## `ES_CONTAINER_HOST_ALIAS` — no action needed
+## `SCORPION_CONTAINER_HOST_ALIAS` — no action needed
 
 Docker Desktop exposes the host machine at `host.docker.internal`
 automatically, which is `api/config.py`'s default. Scanning `localhost`
@@ -76,7 +76,7 @@ not code review:
   like a normal exception. Every subprocess call now decodes as UTF-8
   explicitly with `errors="replace"`.
 - **Typer 0.15.1's rich help formatter breaks under Click ≥ 8.2** —
-  `es --help` threw `TypeError: Parameter.make_metavar() missing 1
+  `scorpion --help` threw `TypeError: Parameter.make_metavar() missing 1
   required positional argument: 'ctx'`. Pinned `click<8.2` in
   requirements.txt. Actual commands worked fine even with the broken
   Click version; only `--help`'s rendering was affected.
@@ -91,8 +91,8 @@ not code review:
 1. `systeminfo | findstr /C:"Hyper-V Requirements" /A:5` (or just open
    Docker Desktop — it will complain loudly if its backend isn't healthy).
 2. `docker run --rm hello-world` — fast and clean confirms the daemon
-   itself is fine before blaming Es for anything.
-3. `es status` — confirms the Agent Core specifically, separate from Docker.
+   itself is fine before blaming Scorpion for anything.
+3. `scorpion status` — confirms the Agent Core specifically, separate from Docker.
 4. If things get erratic (slow, timing out) after hours of heavy use in
    one session, a plain Docker Desktop restart resolved it every time this
    came up — try that before deep debugging.

@@ -74,7 +74,7 @@ def get_or_create_target(session: Session, identifier: str) -> Target:
 
 def verify_file_token(session: Session, identifier: str, expected_token: str) -> Target:
     """docs/SECURITY_AND_AUTHORIZATION.md verification method 1."""
-    url = f"https://{identifier}/.well-known/es-auth.txt"
+    url = f"https://{identifier}/.well-known/scorpion-auth.txt"
     try:
         response = httpx_client.get(url, timeout=10, follow_redirects=False)
         response.raise_for_status()
@@ -142,7 +142,7 @@ def require_authorized(session: Session, identifier: str, action: str) -> Target
     if target.status != "verified":
         raise ScopeDenied(
             f"target '{identifier}' is not verified (status={target.status}). "
-            "Verify it first — see docs/SECURITY_AND_AUTHORIZATION.md."
+            "Verify it first with `scorpion verify-target` or self-attest via `scorpion scan`."
         )
     if target.expires_at is not None and target.expires_at < datetime.now(timezone.utc):
         raise ScopeDenied(f"target '{identifier}' scope verification expired — re-verify.")

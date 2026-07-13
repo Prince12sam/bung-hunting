@@ -3,9 +3,9 @@
 Everything in docs/GETTING_STARTED.md applies — this doc covers only what's
 different on Linux.
 
-**Status: verified on Kali Linux.** `analyze`, `scan`, the `es` console
-command, `es serve`/`stop`/`status`, and Ollama-backed summaries have all
-been run for real, including two live scans against real domains with
+**Status: verified on Kali Linux.** `analyze`, `scan`, the `scorpion` console
+command, `scorpion serve`/`stop`/`status`, and Ollama-backed summaries have
+all been run for real, including two live scans against real domains with
 real findings persisted. What follows reflects that testing, not just a
 reading of the code.
 
@@ -24,18 +24,18 @@ containerized for consistency/sandboxing, not because Linux needs it.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e .        # registers the `es` command
+pip install -e .        # registers the `scorpion` command
 
 cp .env.example .env
 cd docker && cp .env.example .env && docker compose up -d && cd ..
-docker build -t es/ffuf:local docker/tools/ffuf
+docker build -t scorpion/ffuf:local docker/tools/ffuf
 ```
 
 Same steps as Windows otherwise — `python3`/`pip3` if your distro doesn't
 symlink `python`/`pip` to the Python 3 versions (many minimal/server
 distros don't).
 
-## The one real behavioral difference: `ES_CONTAINER_HOST_ALIAS`
+## The one real behavioral difference: `SCORPION_CONTAINER_HOST_ALIAS`
 
 Scanning `localhost` (or any RFC1918 address the Agent Core itself can
 reach) means a container needs to reach back out to the host machine.
@@ -52,11 +52,11 @@ ip addr show docker0 | grep 'inet '   # commonly 172.17.0.1
 Then in `.env`:
 
 ```
-ES_CONTAINER_HOST_ALIAS=172.17.0.1
+SCORPION_CONTAINER_HOST_ALIAS=172.17.0.1
 ```
 
 Confirmed working exactly as expected on Kali — `172.17.0.1` was the
-gateway, set it, `es scan localhost` reached the host correctly.
+gateway, set it, `scorpion scan localhost` reached the host correctly.
 
 This only matters for scanning your own machine's services. Scanning a
 real remote domain never goes through this path — the container reaches
@@ -86,9 +86,9 @@ the internet directly, same as any OS.
   slash correctly.
 - Ctrl+C in a terminal signals the whole foreground process group, not
   just the process you meant to stop — this killed a manually-backgrounded
-  Agent Core mid-session before `es serve` existed. `es serve` now
-  detaches properly (`start_new_session=True`) specifically so this can't
-  happen again.
+  Agent Core mid-session before `scorpion serve` existed. `scorpion serve`
+  now detaches properly (`start_new_session=True`) specifically so this
+  can't happen again.
 - A large local "thinking"/reasoning model running CPU-only can take much
   longer to answer than a small direct-answer model — `ollama ps` shows
   what's actually loaded and generating if a request seems slow. Pick a
@@ -97,8 +97,8 @@ the internet directly, same as any OS.
 ## What to check if something seems wrong
 
 1. `docker run --rm hello-world` works and is fast (confirms the daemon
-   itself is healthy before blaming Es for anything).
-2. `es status` — is the Agent Core actually running, and healthy?
+   itself is healthy before blaming Scorpion for anything).
+2. `scorpion status` — is the Agent Core actually running, and healthy?
 3. Give Docker real memory if it's constrained (cgroup limits, a small VM)
    — this caused genuine multi-minute to hour-long hangs on Windows when
    under-provisioned; there's no reason to assume Linux is immune if the

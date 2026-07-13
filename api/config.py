@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="ES_", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="SCORPION_", extra="ignore")
 
     database_url: str = "postgresql+psycopg://es:es_dev_only@localhost:55432/es"
 
@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     coding_models: list[str] = []
     fast_models: list[str] = []
 
-    # Set via ES_ANTHROPIC_API_KEY / ES_OPENAI_API_KEY / ollama base url etc,
-    # or leave to the underlying provider SDKs' own env vars
+    # Set via SCORPION_ANTHROPIC_API_KEY / SCORPION_OPENAI_API_KEY / ollama
+    # base url etc, or leave to the underlying provider SDKs' own env vars
     # (ANTHROPIC_API_KEY, OPENAI_API_KEY) which litellm reads directly.
     ollama_base_url: str = "http://localhost:11434"
     # litellm's own timeout= isn't reliably enforced for every provider
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     nuclei_docker_image: str = "projectdiscovery/nuclei:latest"
     # No maintained official ffuf image exists on Docker Hub — built locally
     # from source instead, see docker/tools/ffuf/Dockerfile.
-    ffuf_docker_image: str = "es/ffuf:local"
+    ffuf_docker_image: str = "scorpion/ffuf:local"
     dalfox_docker_image: str = "hahwul/dalfox:latest"
     sqlmap_docker_image: str = "googlesky/sqlmap:latest"
 

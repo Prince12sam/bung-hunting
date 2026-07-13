@@ -1,6 +1,6 @@
-# Es
+# Scorpion v2
 
-Es is a local-first AI security platform: a Coding Agent (`analyze`/`fix`,
+Scorpion is a local-first AI security platform: a Coding Agent (`analyze`/`fix`,
 security-focused static review + LLM-assisted patching) and a Pentest
 Agent (`scan`, chaining httpx, subfinder, katana, nmap, nuclei, ffuf,
 dalfox, sqlmap) behind one CLI, orchestrated by an LLM router that works
@@ -17,7 +17,7 @@ fixtures, on both Windows and Linux. Start with
 
 | Doc | What it covers |
 |---|---|
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Setup and usage — start here to actually run Es |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Setup and usage — start here to actually run Scorpion |
 | [docs/WINDOWS.md](docs/WINDOWS.md) | What's different (and what actually went wrong and got fixed) on Windows |
 | [docs/LINUX.md](docs/LINUX.md) | What's different on Linux — verified on Kali |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Agent core, tool router, LLM router, memory — how the pieces fit |
