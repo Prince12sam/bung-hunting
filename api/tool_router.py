@@ -72,7 +72,7 @@ def run_tests(repo_path: Path) -> tuple[bool, str]:
     result = subprocess.run(
         # sys.executable, not the literal "python": that name isn't
         # guaranteed on PATH (many Linux distros only ship "python3"), and
-        # this also guarantees the same interpreter/venv Es itself runs in.
+        # this also guarantees the same interpreter/venv Scorpion itself runs in.
         [sys.executable, "-m", "pytest", "-q"],
         cwd=repo_path,
         capture_output=True,

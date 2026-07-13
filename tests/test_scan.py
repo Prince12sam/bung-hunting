@@ -31,7 +31,7 @@ def _unique_test_domain() -> str:
     depend on an earlier run's side effects. `.invalid` is reserved by
     RFC 2606 and is guaranteed to never resolve, so even a scope-gate bug
     here can't cause a real request to reach a real host."""
-    return f"es-test-{uuid.uuid4().hex[:12]}.invalid"
+    return f"scorpion-test-{uuid.uuid4().hex[:12]}.invalid"
 
 
 def test_scan_denies_active_action_on_unverified_third_party_target():

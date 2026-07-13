@@ -196,7 +196,7 @@ def apply_fix(path: str, diff: str, do_commit: bool) -> tuple[bool, bool, str, s
 
     if do_commit:
         try:
-            git_commit(repo_path, "fix: apply Es-suggested security patch")
+            git_commit(repo_path, "fix: apply Scorpion-suggested security patch")
         except Exception as exc:  # noqa: BLE001
             return True, False, output, f"tests passed but commit failed: {exc}"
         return True, True, output, None
