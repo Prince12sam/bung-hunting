@@ -15,19 +15,22 @@ from api.tool_router import run_dalfox, run_ffuf, run_katana, run_nuclei, run_sq
 TARGET_HOST = settings.container_host_alias
 
 
+class _TestHTTPServer(http.server.ThreadingHTTPServer):
+    # socketserver's default listen backlog is 5 — too small for ffuf's
+    # default 40 concurrent connections arriving in a burst, some still got
+    # refused even with threading. This is purely a test-fixture limit, not
+    # a real product concern (proven separately against a real production
+    # site) — a real server's own backlog is the target's problem, not ours.
+    request_queue_size = 128
+
+
 def _start_http_server(port: int) -> tuple[http.server.ThreadingHTTPServer, tempfile.TemporaryDirectory]:
     tmpdir = tempfile.TemporaryDirectory()
     (Path(tmpdir.name) / "robots.txt").write_text("User-agent: *\n")
     (Path(tmpdir.name) / "index.html").write_text("<html>hi</html>")
 
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=tmpdir.name)
-    # Plain (single-threaded) HTTPServer/TCPServer handles one connection at
-    # a time — found the hard way that ffuf's default 40 concurrent
-    # connections mostly get refused/dropped against it, making results
-    # look randomly incomplete even though the tool itself is working fine
-    # (proven separately against a real production site). Threaded server
-    # actually handles concurrent tools correctly.
-    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler)
+    httpd = _TestHTTPServer(("0.0.0.0", port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd, tmpdir
 
