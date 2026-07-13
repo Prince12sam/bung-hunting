@@ -1,19 +1,22 @@
 # Getting Started
 
-Phase 1 (Agent Core + Memory + CLI: `analyze` / `fix`) and Phase 2 (Tool
-Orchestrator: `scan` with httpx, subfinder, katana, nmap, nuclei, ffuf,
-dalfox, sqlmap) are both done — see docs/MVP.md for exact status.
+Es is a local AI security platform: a Coding Agent (`analyze`/`fix`) and a
+Pentest Agent (`scan`, chaining httpx, subfinder, katana, nmap, nuclei,
+ffuf, dalfox, sqlmap) behind one CLI, with an LLM router that works with
+either a cloud provider or a local model (Ollama).
 
-Written and verified on Windows; see docs/LINUX.md for what's different
-(and what's still unverified) running this on Linux.
+Written and verified on Windows and Linux — see docs/WINDOWS.md /
+docs/LINUX.md for what's different (and what actually went wrong and got
+fixed) on each.
 
 ## Prerequisites
 
 - Python 3.11+
 - Docker running — every external security tool (including semgrep, which
-  has no native Windows build) runs sandboxed in a container. On Windows/Mac
-  that's Docker Desktop; on Linux, the native Docker daemon (see
-  docs/LINUX.md — no Docker Desktop needed, and fewer quirks than Windows)
+  has no native Windows build) runs sandboxed in a container. On
+  Windows/Mac that's Docker Desktop; on Linux, the native Docker daemon
+  (see docs/LINUX.md — no Docker Desktop needed, and fewer setup quirks
+  than Windows)
 
 ## Setup
 
@@ -42,17 +45,16 @@ docker build -t es/ffuf:local docker/tools/ffuf
 ## Run the Agent Core
 
 ```
-uvicorn api.main:app --host 127.0.0.1 --port 8731
+es serve              # starts detached, tracked by a PID file
+es status             # check it's up and healthy
+es stop               # stop it cleanly
+es serve --foreground # or run attached to this terminal instead
 ```
 
-On startup it creates the `vector` extension and all tables if they don't
-exist yet (fine for MVP; a real migration tool comes once the schema
-stabilizes — see docs/ROADMAP.md).
+On first startup it creates the `vector` extension and all Postgres
+tables if they don't exist yet.
 
 ## Use the CLI
-
-Either `es <command>` (after `pip install -e .`) or `python -m cli.main
-<command>` — identical, the installed command is just a shortcut.
 
 ```
 es analyze path/to/code
@@ -65,12 +67,18 @@ es scan some-target.example       # prompts for self-attestation (see below)
 es verify-target some-target.example --token <token>   # stronger, provable verification
 ```
 
+`scan` shows live stage-by-stage progress (which of the 8 tools is
+currently running, how long it's been going) rather than sitting silent —
+a real scan against a content-heavy site can take several minutes
+end-to-end (nuclei alone can run ~3000 requests).
+
 ## Scanning a target you don't own
 
-`scan` runs the full Tool Orchestrator pipeline (docs/MVP.md #4) — but only
-against targets the scope gate has verified (docs/SECURITY_AND_AUTHORIZATION.md).
-`localhost` and RFC1918 addresses auto-verify since there's no third party
-to harm. For anything else, `scan` gives you two paths:
+`scan` only runs against targets a scope gate has verified — a
+conversational "yes" is never enough, this is enforced in code before any
+active tool fires. `localhost` and RFC1918 addresses auto-verify since
+there's no third party to harm. For anything else, `scan` gives you two
+paths:
 
 - **Self-attestation (quick, weaker)** — `scan` prompts you interactively:
   confirm you own/are authorized to test the target, then type a short
@@ -95,26 +103,26 @@ authorize something you're actually allowed to test.
 `analyze` still runs semgrep and returns raw findings; the summary field
 explains that no LLM is configured instead of a real summary. `fix` requires
 an LLM (semgrep alone doesn't write patches) and will return a clear error
-if none is configured.
+if none is configured. Every LLM call — cloud or local — is bounded by a
+hard timeout (`ES_LLM_CALL_TIMEOUT_SECONDS`, default 60s) enforced in code,
+independent of whether the underlying provider honors its own timeout
+setting.
 
 ## Notes
 
 - `fix --apply` assumes `path` is a git repository (uses `git apply` / `git
   commit`). Commit is opt-in and only happens if `pytest` passes after the
-  patch is applied — see docs/REVIEW.md point 6.
+  patch is applied.
 - Findings are persisted to Memory (Postgres) keyed by project name. If
   Postgres isn't reachable, `analyze`/`fix` still work — you just won't get
   cross-session recall of past findings.
-- **Give Docker at least ~6-8GB of RAM.** Found this the hard way: with
-  Docker Desktop's default ~2GB, `scan`'s later stages (nuclei, dalfox,
-  sqlmap running back to back against a real site) got erratic multi-minute
-  to hour-long hangs under memory pressure — not a code bug, the containers
-  themselves were starved. Docker Desktop: Settings → Resources → Memory.
-  Native Linux Docker isn't capped the same way by default, but the same
-  tools still need real memory to run several at once without contention.
-- A `scan` against a real, content-heavy site can legitimately take several
-  minutes end-to-end (nuclei alone can run ~3000 requests) — the CLI waits
-  up to 30 minutes for it. If you scan the same real site again immediately
-  after, expect thinner results: many sites start rate-limiting/blocking
-  after an intensive first pass, which is the target defending itself, not
-  a bug here.
+- **Give Docker at least ~6-8GB of RAM.** With Docker Desktop's default
+  ~2GB, `scan`'s later stages (nuclei, dalfox, sqlmap running back to back
+  against a real site) got erratic multi-minute to hour-long hangs under
+  memory pressure — not a code bug, the containers themselves were
+  starved. Docker Desktop: Settings → Resources → Memory. Native Linux
+  Docker isn't capped the same way by default, but the same tools still
+  need real memory to run several at once without contention.
+- If you scan the same real site again immediately after a full pass,
+  expect thinner results: many sites start rate-limiting/blocking after an
+  intensive scan, which is the target defending itself, not a bug here.

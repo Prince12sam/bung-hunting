@@ -1,28 +1,24 @@
 # Running on Linux
 
 Everything in docs/GETTING_STARTED.md applies — this doc covers only what's
-different on Linux, and is honest about what's actually been verified
-there versus what's inferred from reading the code.
+different on Linux.
 
-**Status: not yet run on a real Linux box.** Everything below reflects (a)
-grepping the codebase for platform-specific assumptions (there are almost
-none — see the list at the bottom) and (b) how Docker networking actually
-differs on native Linux vs. Docker Desktop. Treat this as a well-reasoned
-starting point, not a "confirmed working" claim — if you try it, tell us
-what broke.
+**Status: verified on Kali Linux.** `analyze`, `scan`, the `es` console
+command, `es serve`/`stop`/`status`, and Ollama-backed summaries have all
+been run for real, including two live scans against real domains with
+real findings persisted. What follows reflects that testing, not just a
+reading of the code.
 
 ## What's actually easier on Linux
 
 Docker is native here — no Hyper-V/WSL2 backend, no virtualization/BIOS
-prerequisites, no "Docker Desktop won't start" saga (see docs/REVIEW.md's
-history of exactly that fight on Windows). `docker run` talks directly to
-the daemon on the same kernel. Every containerized tool (semgrep, httpx,
-subfinder, katana, nmap, nuclei, ffuf, dalfox, sqlmap) should work
-identically, since none of them are Windows-specific — semgrep is
-containerized here for consistency and sandboxing (docs/SECURITY_AND_AUTHORIZATION.md),
-not because Linux needs it that way.
+prerequisites, no "Docker Desktop won't start" fight. `docker run` talks
+directly to the daemon on the same kernel. Every containerized tool
+(semgrep, httpx, subfinder, katana, nmap, nuclei, ffuf, dalfox, sqlmap)
+works the same way, since none of them are Windows-specific — semgrep is
+containerized for consistency/sandboxing, not because Linux needs it.
 
-## Setup differences
+## Setup
 
 ```bash
 python3 -m venv .venv
@@ -44,12 +40,10 @@ distros don't).
 Scanning `localhost` (or any RFC1918 address the Agent Core itself can
 reach) means a container needs to reach back out to the host machine.
 Docker Desktop (Windows/Mac) exposes the host at the special DNS name
-`host.docker.internal` automatically — that's `api/config.py`'s default for
-`container_host_alias`. **Native Linux Docker does not resolve that name by
-default.**
+`host.docker.internal` automatically — native Linux Docker does not
+resolve that name by default.
 
-Fix: point it at the `docker0` bridge gateway IP instead, which containers
-*can* reach directly on Linux:
+Fix: point it at the `docker0` bridge gateway IP instead:
 
 ```bash
 ip addr show docker0 | grep 'inet '   # commonly 172.17.0.1
@@ -61,28 +55,51 @@ Then in `.env`:
 ES_CONTAINER_HOST_ALIAS=172.17.0.1
 ```
 
+Confirmed working exactly as expected on Kali — `172.17.0.1` was the
+gateway, set it, `es scan localhost` reached the host correctly.
+
 This only matters for scanning your own machine's services. Scanning a
-real remote domain (`es scan some-real-target.com`) never goes through
-this path — the container reaches the internet directly, same as any OS.
+real remote domain never goes through this path — the container reaches
+the internet directly, same as any OS.
 
 ## Already fixed for Linux (found via testing on Windows, but the fix is cross-platform)
 
 - `run_tests` (used by `fix --apply`) used to hardcode the literal string
   `"python"` — many Linux distros only ship `python3` on PATH. Now uses
-  `sys.executable`, which is also strictly more correct on Windows (same
-  interpreter/venv Es itself runs in, not whatever "python" resolves to).
+  `sys.executable`.
 - Every `subprocess.run` call decodes tool output as UTF-8 explicitly
-  rather than relying on the platform's default locale encoding — this was
-  a real Windows-specific bug (cp1252 crashing on real page content), not a
-  Linux one, but the fix applies everywhere.
+  rather than relying on the platform's default locale encoding.
+- LLM calls are bounded by a hard wall-clock timeout in Python, not just
+  litellm's own `timeout=` kwarg (confirmed unreliable for at least the
+  Ollama provider) — a slow/CPU-bound local model can no longer hang a
+  whole request indefinitely.
 
-## What to actually check if you try this
+## Things that actually happened testing this on Kali
+
+- A `git clone` + `pip install -r requirements.txt` + `pip install -e .`
+  worked cleanly on the first try — no Linux-specific dependency issues.
+- Docker was already installed and the daemon already running (Kali
+  ships it, but don't assume every distro does).
+- Ollama models already pulled locally worked fine as `ollama/<name>` —
+  including ones with a namespace prefix in their name (e.g.
+  `ollama/huihui_ai/qwen3.5-abliterated:9b`), litellm handles the extra
+  slash correctly.
+- Ctrl+C in a terminal signals the whole foreground process group, not
+  just the process you meant to stop — this killed a manually-backgrounded
+  Agent Core mid-session before `es serve` existed. `es serve` now
+  detaches properly (`start_new_session=True`) specifically so this can't
+  happen again.
+- A large local "thinking"/reasoning model running CPU-only can take much
+  longer to answer than a small direct-answer model — `ollama ps` shows
+  what's actually loaded and generating if a request seems slow. Pick a
+  small non-reasoning model (e.g. `llama3.2`) for interactive use.
+
+## What to check if something seems wrong
 
 1. `docker run --rm hello-world` works and is fast (confirms the daemon
    itself is healthy before blaming Es for anything).
-2. `es scan localhost` after setting `ES_CONTAINER_HOST_ALIAS` per above —
-   should find open ports the same way the Windows walkthrough did.
-3. Give Docker real memory if it's constrained (cgroup limits, a container,
-   a small VM) — see the note in docs/GETTING_STARTED.md's Notes section;
-   this bit hard on Windows and there's no reason to assume Linux is immune
-   if the daemon itself is resource-starved.
+2. `es status` — is the Agent Core actually running, and healthy?
+3. Give Docker real memory if it's constrained (cgroup limits, a small VM)
+   — this caused genuine multi-minute to hour-long hangs on Windows when
+   under-provisioned; there's no reason to assume Linux is immune if the
+   daemon itself is resource-starved.

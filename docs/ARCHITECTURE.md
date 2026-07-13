@@ -42,9 +42,10 @@ at a time so each call can be gated and logged independently.
 stuffing the whole project/target history into every call.
 
 **Tool Router.** The only component allowed to invoke a tool. Every
-invocation passes through the authorization gate
-(docs/SECURITY_AND_AUTHORIZATION.md) before anything active runs, and every
-result is normalized to one finding schema before it reaches Memory.
+invocation passes through a scope/authorization gate — verified,
+technically-provable ownership or an explicit logged attestation, never a
+conversational "may I?" — before anything active runs, and every result is
+normalized to one finding schema before it reaches Memory.
 
 **LLM Router.** Chooses a model per step based on: task type (code edit vs.
 recon summarization vs. fast chat), data sensitivity (does this step's
@@ -56,13 +57,12 @@ single-model dependency.
 interface, so the Agent Core never shells out directly and every tool's
 output lands in the same shape in Memory.
 
-**Memory.** Single Postgres + pgvector store. See docs/MVP.md #2 and
-docs/REVIEW.md point 3 for why this replaced the original three-store design.
+**Memory.** Single Postgres + pgvector store — one schema for structured
+data and embeddings, rather than several overlapping stores.
 
 ## Why agents are specialized, not one prompt
 
-Each specialist (Coding, Pentest, Browser, SOC, Cloud, ...) gets a narrow
-tool allowlist and a focused system prompt instead of one prompt trying to
-know nmap flags, IAM policy syntax, and React patterns simultaneously. The
-Master Agent's job is only routing a request to the right specialist(s) —
-see docs/AGENTS.md.
+Each specialist (Coding, Pentest, ...) gets a narrow tool allowlist and a
+focused system prompt instead of one prompt trying to know nmap flags,
+IAM policy syntax, and React patterns simultaneously. A Master Agent's job
+is only routing a request to the right specialist(s).
