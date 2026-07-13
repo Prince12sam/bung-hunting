@@ -16,6 +16,7 @@ from typing import Callable, Literal
 
 from sqlalchemy.orm import Session
 
+from api import scan_status
 from api.scope import ACTIVE_SCAN, PASSIVE_RECON, ScopeDenied, require_authorized, resolve_for_container
 from api.tool_router import (
     ToolError,
@@ -69,17 +70,21 @@ def run_pipeline(session: Session, target: str) -> tuple[list[dict], list[str]]:
     host_form = _as_host(container_target)
     url_form = _as_url(container_target)
 
-    for stage in PIPELINE:
-        try:
-            require_authorized(session, target, stage.action_class)
-        except ScopeDenied as exc:
-            warnings.append(f"{stage.name}: skipped — {exc}")
-            continue
+    try:
+        for i, stage in enumerate(PIPELINE, start=1):
+            try:
+                require_authorized(session, target, stage.action_class)
+            except ScopeDenied as exc:
+                warnings.append(f"{stage.name}: skipped — {exc}")
+                continue
 
-        stage_target = host_form if stage.target_form == "host" else url_form
-        try:
-            findings.extend(stage.runner(stage_target))
-        except ToolError as exc:
-            warnings.append(f"{stage.name}: {exc}")
+            scan_status.set_stage(target, stage.name, i, len(PIPELINE))
+            stage_target = host_form if stage.target_form == "host" else url_form
+            try:
+                findings.extend(stage.runner(stage_target))
+            except ToolError as exc:
+                warnings.append(f"{stage.name}: {exc}")
+    finally:
+        scan_status.clear(target)
 
     return findings, warnings

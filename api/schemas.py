@@ -78,3 +78,11 @@ class TargetStatusResponse(BaseModel):
 class SelfAttestRequest(BaseModel):
     target: str
     statement: str
+
+
+class ScanProgressResponse(BaseModel):
+    running: bool
+    stage: str | None = None
+    stage_index: int | None = None
+    stage_total: int | None = None
+    elapsed_seconds: float | None = None

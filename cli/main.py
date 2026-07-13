@@ -1,9 +1,13 @@
+import threading
+
 import httpx
 import typer
 from rich.console import Console
+from rich.live import Live
 from rich.table import Table
 
-from cli.client import BASE_URL, SCAN_TIMEOUT, post
+from cli import server as server_lifecycle
+from cli.client import BASE_URL, SCAN_TIMEOUT, get as http_get, post
 
 app = typer.Typer(add_completion=False, help="Es — local AI security platform CLI (Phase 1: MVP)")
 console = Console()
@@ -12,8 +16,35 @@ console = Console()
 def _connection_error_hint() -> None:
     console.print(
         f"[red]Could not reach the Es Agent Core at {BASE_URL}.[/red]\n"
-        "Start it first: [bold]uvicorn api.main:app --port 8731[/bold]"
+        "Start it: [bold]es serve[/bold]"
     )
+
+
+@app.command()
+def serve(
+    foreground: bool = typer.Option(
+        False, "--foreground", help="Run attached to this terminal instead of detached in the background"
+    ),
+) -> None:
+    """Start the Agent Core. Detached and tracked by PID file unless --foreground."""
+    if foreground:
+        server_lifecycle.start(foreground=True)
+        return
+    ok, message = server_lifecycle.start()
+    console.print(f"[green]{message}[/green]" if ok else f"[yellow]{message}[/yellow]")
+
+
+@app.command()
+def stop() -> None:
+    """Stop a background Agent Core started with `es serve`."""
+    ok, message = server_lifecycle.stop()
+    console.print(f"[green]{message}[/green]" if ok else f"[yellow]{message}[/yellow]")
+
+
+@app.command()
+def status() -> None:
+    """Check whether the Agent Core is running."""
+    console.print(server_lifecycle.status())
 
 
 @app.command()
@@ -135,23 +166,55 @@ def scan(
 
     console.print(
         "[dim]Running the full pipeline — against a real site this can take several "
-        "minutes (nuclei alone can run ~3000 requests).[/dim]"
+        "minutes (nuclei alone can run ~3000 requests). Live stage progress below.[/dim]"
     )
-    try:
-        result = post("/v1/scan", {"target": target}, timeout=SCAN_TIMEOUT)
-    except httpx.ConnectError:
-        _connection_error_hint()
-        raise typer.Exit(1)
-    except httpx.ReadTimeout:
-        console.print(
-            f"[red]No response after {SCAN_TIMEOUT}s.[/red] The scan may still be running "
-            "server-side — the Agent Core doesn't cancel work just because the CLI stopped "
-            "waiting. Check its findings later rather than re-running immediately."
-        )
-        raise typer.Exit(1)
-    except httpx.HTTPStatusError as exc:
-        console.print(f"[red]Agent Core error: {exc.response.text}[/red]")
-        raise typer.Exit(1)
+
+    outcome: dict = {}
+
+    def _run_scan() -> None:
+        try:
+            outcome["result"] = post("/v1/scan", {"target": target}, timeout=SCAN_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001 - re-raised on the main thread below
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=_run_scan, daemon=True)
+    worker.start()
+
+    with Live(console=console, refresh_per_second=2, transient=True) as live:
+        while worker.is_alive():
+            try:
+                progress = http_get("/v1/scan/progress", params={"target": target})
+            except Exception:  # noqa: BLE001 - progress polling is best-effort, never fatal
+                progress = {"running": False}
+
+            if progress.get("running"):
+                live.update(
+                    f"[cyan]Running: {progress['stage']}[/cyan] "
+                    f"(stage {progress['stage_index']}/{progress['stage_total']}, "
+                    f"{progress['elapsed_seconds']:.0f}s elapsed)"
+                )
+            else:
+                live.update("[dim]Starting…[/dim]")
+            worker.join(timeout=1)
+
+    if "error" in outcome:
+        exc = outcome["error"]
+        if isinstance(exc, httpx.ConnectError):
+            _connection_error_hint()
+            raise typer.Exit(1)
+        if isinstance(exc, httpx.ReadTimeout):
+            console.print(
+                f"[red]No response after {SCAN_TIMEOUT}s.[/red] The scan may still be running "
+                "server-side — the Agent Core doesn't cancel work just because the CLI stopped "
+                "waiting. Check its findings later rather than re-running immediately."
+            )
+            raise typer.Exit(1)
+        if isinstance(exc, httpx.HTTPStatusError):
+            console.print(f"[red]Agent Core error: {exc.response.text}[/red]")
+            raise typer.Exit(1)
+        raise exc
+
+    result = outcome["result"]
 
     for w in result["warnings"]:
         console.print(f"[yellow]{w}[/yellow]")

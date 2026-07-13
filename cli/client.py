@@ -18,3 +18,10 @@ def post(path: str, json: dict, timeout: float = DEFAULT_TIMEOUT) -> dict:
         response = client.post(path, json=json)
         response.raise_for_status()
         return response.json()
+
+
+def get(path: str, params: dict | None = None, timeout: float = 10) -> dict:
+    with httpx.Client(base_url=BASE_URL, timeout=timeout) as client:
+        response = client.get(path, params=params)
+        response.raise_for_status()
+        return response.json()

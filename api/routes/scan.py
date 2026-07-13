@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from api import scan_status
 from api.agents.pentest_agent import scan as run_scan
 from api.schemas import (
+    ScanProgressResponse,
     ScanRequest,
     ScanResponse,
     SelfAttestRequest,
@@ -41,6 +43,20 @@ def target_status(req: TargetStatusRequest, session: Session = Depends(get_sessi
 def self_attest(req: SelfAttestRequest, session: Session = Depends(get_session)) -> VerifyTargetResponse:
     target = verify_self_attestation(session, req.target, req.statement)
     return VerifyTargetResponse(status=target.status, verification_method=target.verification_method)
+
+
+@router.get("/scan/progress", response_model=ScanProgressResponse)
+def scan_progress(target: str) -> ScanProgressResponse:
+    info = scan_status.get(target)
+    if info is None:
+        return ScanProgressResponse(running=False)
+    return ScanProgressResponse(
+        running=True,
+        stage=info["stage"],
+        stage_index=info["index"],
+        stage_total=info["total"],
+        elapsed_seconds=round(info["elapsed_seconds"], 1),
+    )
 
 
 @router.post("/scan", response_model=ScanResponse)

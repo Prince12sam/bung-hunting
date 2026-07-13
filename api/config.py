@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # or leave to the underlying provider SDKs' own env vars
     # (ANTHROPIC_API_KEY, OPENAI_API_KEY) which litellm reads directly.
     ollama_base_url: str = "http://localhost:11434"
+    # litellm's own timeout= isn't reliably enforced for every provider
+    # (confirmed: a local Ollama model ran 30+ minutes past this with the
+    # old code) — api/llm_router.py additionally wraps every call in a hard
+    # wall-clock deadline of its own using this same value. Raise this if
+    # you deliberately run large/CPU-only/"thinking" local models.
+    llm_call_timeout_seconds: int = 60
 
     # Coding Agent (Phase 1)
     semgrep_docker_image: str = "semgrep/semgrep:latest"
