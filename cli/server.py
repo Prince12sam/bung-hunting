@@ -93,7 +93,7 @@ def start(foreground: bool = False) -> tuple[bool, str]:
     process = subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **kwargs)
     PID_FILE.write_text(str(process.pid))
 
-    for _ in range(20):
+    for _ in range(settings.startup_health_check_retries):
         if is_healthy():
             return True, f"Started (PID {process.pid}). Logs: {LOG_FILE}"
         time.sleep(0.5)

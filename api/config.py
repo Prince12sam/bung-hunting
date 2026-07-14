@@ -8,6 +8,13 @@ class Settings(BaseSettings):
 
     host: str = "127.0.0.1"
     port: int = 8731
+    # `scorpion serve`/`launch` poll /healthz this many times (0.5s apart)
+    # before giving up on a fresh start. Confirmed on real hardware: a cold
+    # start (first import of langgraph's dependency chain, no warm page
+    # cache) can take >10s even though the process itself never hangs or
+    # crashes — raise this if you see "Started but not responding yet" with
+    # a log that actually shows a clean startup.
+    startup_health_check_retries: int = 60
 
     # Ordered fallback chain for the LLM Router. Each entry is a litellm
     # model string; the router tries them in order until one succeeds.
