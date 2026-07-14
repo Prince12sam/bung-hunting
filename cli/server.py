@@ -63,6 +63,20 @@ def start(foreground: bool = False) -> tuple[bool, str]:
     if existing is not None:
         return False, f"Already running (PID {existing})."
 
+    # Found the hard way: checking only the PID file misses anything not
+    # started through this module — an old, untracked instance (e.g. from
+    # manually backgrounding uvicorn before `scorpion serve` existed) can
+    # already be answering on the port. Spawning a second process on top of
+    # it doesn't fail loudly; the health check below just ends up passing
+    # because of the *other* process, making a broken new one look "started".
+    if is_healthy():
+        return False, (
+            f"Something is already answering on {settings.host}:{settings.port}, "
+            "but it's not tracked by a PID file (probably started outside "
+            "`scorpion serve`/`launch`). Not starting a second instance — "
+            "find and stop it manually first if it's not what you want."
+        )
+
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "uvicorn", "api.main:app", "--host", settings.host, "--port", str(settings.port)]
 
@@ -115,6 +129,11 @@ def stop() -> tuple[bool, str]:
 def status() -> str:
     pid = read_pid()
     if pid is None:
+        if is_healthy():
+            return (
+                f"Something is answering on {settings.host}:{settings.port}, but it's not "
+                "tracked by a PID file (not started via `scorpion serve`/`launch`)."
+            )
         return "Not running."
     healthy = is_healthy()
     return f"Running (PID {pid}), health check: {'ok' if healthy else 'NOT responding'}."

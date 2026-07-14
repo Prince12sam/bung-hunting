@@ -42,7 +42,17 @@ cd ..
 docker build -t scorpion/ffuf:local docker/tools/ffuf
 ```
 
-## Run the Agent Core
+## Run it
+
+```
+scorpion launch    # the one command: checks Docker, starts Postgres if
+                    # needed, builds the ffuf image if missing, starts the
+                    # Agent Core. Safe to re-run any time — every step is
+                    # idempotent, so this is what to run each time you sit
+                    # down to use Scorpion.
+```
+
+Or manage the Agent Core on its own:
 
 ```
 scorpion serve              # starts detached, tracked by a PID file

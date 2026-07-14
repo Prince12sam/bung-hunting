@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
-from cli import server as server_lifecycle
+from cli import launch as launch_lifecycle, server as server_lifecycle
 from cli.client import BASE_URL, SCAN_TIMEOUT, get as http_get, post
 
 app = typer.Typer(add_completion=False, help="Scorpion v2 — local AI security platform CLI")
@@ -18,6 +18,18 @@ def _connection_error_hint() -> None:
         f"[red]Could not reach the Scorpion Agent Core at {BASE_URL}.[/red]\n"
         "Start it: [bold]scorpion serve[/bold]"
     )
+
+
+@app.command()
+def launch() -> None:
+    """Start everything: checks Docker, brings up Postgres, builds the ffuf
+    image if missing, then starts the Agent Core. Safe to re-run — every
+    step is idempotent. This is the one command to run each time you sit
+    down to use Scorpion."""
+    for ok, message in launch_lifecycle.launch():
+        console.print(f"[green]OK  {message}[/green]" if ok else f"[red]FAIL {message}[/red]")
+        if not ok:
+            raise typer.Exit(1)
 
 
 @app.command()
