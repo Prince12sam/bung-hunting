@@ -12,6 +12,19 @@ from cli.client import BASE_URL, SCAN_TIMEOUT, get as http_get, post
 app = typer.Typer(add_completion=False, help="Scorpion v2 — local AI security platform CLI")
 console = Console()
 
+# Plain ASCII only (no box-drawing/emoji) — a real UnicodeEncodeError on
+# Windows' legacy cp1252 console is what killed the earlier checkmark/cross
+# symbols elsewhere in this CLI, and a banner is the last place we want a
+# crash before the tool has even started.
+BANNER = r"""
+ ____   ____ ___  ____  ____ ___ ___  _   _
+/ ___| / ___/ _ \|  _ \|  _ \_ _/ _ \| \ | |
+\___ \| |  | | | | |_) | |_) | | | | |  \| |
+ ___) | |__| |_| |  _ <|  __/| | |_| | |\  |
+|____/ \____\___/|_| \_\_|  |___\___/|_| \_|
+              v2 -- local AI security platform
+"""
+
 
 def _connection_error_hint() -> None:
     console.print(
@@ -26,6 +39,7 @@ def launch() -> None:
     image if missing, then starts the Agent Core. Safe to re-run — every
     step is idempotent. This is the one command to run each time you sit
     down to use Scorpion."""
+    console.print(f"[bold red]{BANNER}[/bold red]")
     for ok, message in launch_lifecycle.launch():
         console.print(f"[green]OK  {message}[/green]" if ok else f"[red]FAIL {message}[/red]")
         if not ok:
