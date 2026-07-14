@@ -8,6 +8,7 @@ from rich.table import Table
 
 from cli import launch as launch_lifecycle, server as server_lifecycle
 from cli.client import BASE_URL, SCAN_TIMEOUT, get as http_get, post
+from cli.report import render_markdown, write_report
 
 app = typer.Typer(add_completion=False, help="Scorpion v2 — local AI security platform CLI")
 console = Console()
@@ -75,7 +76,12 @@ def status() -> None:
 
 
 @app.command()
-def analyze(path: str = typer.Argument(..., help="Local path to analyze")) -> None:
+def analyze(
+    path: str = typer.Argument(..., help="Local path to analyze"),
+    report: str = typer.Option(
+        None, "--report", help="Also write the findings to a Markdown report at this path"
+    ),
+) -> None:
     """Static security review of local code (Coding Agent, no network activity)."""
     try:
         result = post("/v1/analyze", {"path": path})
@@ -105,6 +111,11 @@ def analyze(path: str = typer.Argument(..., help="Local path to analyze")) -> No
 
     console.print("\n[bold]Summary[/bold]")
     console.print(result["summary"])
+
+    if report:
+        content = render_markdown("Scorpion Code Analysis Report", path, findings, result["summary"])
+        out = write_report(report, content)
+        console.print(f"[dim]Report written to {out}[/dim]")
 
 
 @app.command()
@@ -153,6 +164,9 @@ def scan(
         "--self-attest",
         help="Non-interactively attest ownership/authorization with this statement "
         "(skips the prompt below; still the weakest, logged verification method)",
+    ),
+    report: str = typer.Option(
+        None, "--report", help="Also write the findings to a Markdown report at this path"
     ),
 ) -> None:
     """Orchestrator-driven recon + active scan chain (Pentest Agent).
@@ -261,6 +275,13 @@ def scan(
 
     console.print("\n[bold]Summary[/bold]")
     console.print(result["summary"])
+
+    if report:
+        content = render_markdown(
+            "Scorpion Pentest Report", target, findings, result["summary"], warnings=result["warnings"]
+        )
+        out = write_report(report, content)
+        console.print(f"[dim]Report written to {out}[/dim]")
 
 
 @app.command("verify-target")

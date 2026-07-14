@@ -77,6 +77,11 @@ scorpion scan some-target.example       # prompts for self-attestation (see belo
 scorpion verify-target some-target.example --token <token>   # stronger, provable verification
 ```
 
+Add `--report path/to/file.md` to `analyze` or `scan` to also write the findings,
+summary, and (for `scan`) warnings to a Markdown file — useful for a bug
+bounty submission or client deliverable instead of copying terminal output.
+Findings are sorted by severity (critical first).
+
 `scan` shows live stage-by-stage progress (which of the 8 tools is
 currently running, how long it's been going) rather than sitting silent —
 a real scan against a content-heavy site can take several minutes
