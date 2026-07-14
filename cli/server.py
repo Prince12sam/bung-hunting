@@ -61,7 +61,10 @@ def is_healthy() -> bool:
 def start(foreground: bool = False) -> tuple[bool, str]:
     existing = read_pid()
     if existing is not None:
-        return False, f"Already running (PID {existing})."
+        # Already running is the desired end state for an idempotent start,
+        # not a failure — `launch()` treats a False here as a hard stop and
+        # exits non-zero, which broke its own "safe to re-run" promise.
+        return True, f"Already running (PID {existing})."
 
     # Found the hard way: checking only the PID file misses anything not
     # started through this module — an old, untracked instance (e.g. from
