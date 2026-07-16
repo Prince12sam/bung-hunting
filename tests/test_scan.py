@@ -1,12 +1,16 @@
 import http.server
 import threading
 import uuid
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from api.config import settings
 from api.main import app
 from api.tool_router import run_httpx, run_nmap
+from memory.db import SessionLocal
+from memory.models import Target
 
 
 def _start_http_server(port: int) -> http.server.ThreadingHTTPServer:
@@ -68,6 +72,32 @@ def test_self_attestation_updates_scope_without_touching_a_real_host():
 
     after = client.post("/v1/targets/status", json={"target": target}).json()
     assert after["status"] == "verified"
+
+
+def test_expired_verification_reports_as_expired_not_verified():
+    """Regression: found on Kali against a real target (afrimarkethub.store)
+    — a self-attestation past its TTL still reported status="verified" from
+    /v1/targets/status, so `scan --self-attest` saw "already verified",
+    never re-submitted the attestation, and every pipeline stage then
+    denied anyway (require_authorized does check expiry, just too late to
+    help). The DB column itself never flips on its own when a TTL passes —
+    callers that decide whether to re-verify *before* running the pipeline
+    have to see "expired", not a stale "verified"."""
+    client = TestClient(app)
+    target = _unique_test_domain()
+
+    client.post("/v1/targets/self-attest", json={"target": target, "statement": "test: I own this"})
+
+    session = SessionLocal()
+    try:
+        row = session.scalar(select(Target).where(Target.identifier == target))
+        row.expires_at = datetime.now(timezone.utc) - timedelta(days=1)
+        session.commit()
+    finally:
+        session.close()
+
+    status = client.post("/v1/targets/status", json={"target": target}).json()
+    assert status["status"] == "expired"
 
 
 def test_local_target_auto_verified_and_scan_wires_through():

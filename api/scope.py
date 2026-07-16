@@ -114,6 +114,24 @@ def verify_self_attestation(session: Session, identifier: str, statement: str) -
     return target
 
 
+def _is_expired(target: Target) -> bool:
+    return target.expires_at is not None and target.expires_at < datetime.now(timezone.utc)
+
+
+def effective_status(target: Target) -> str:
+    """`target.status` is a raw DB column set once at verification time —
+    it never flips back to anything else on its own once a TTL passes.
+    Only require_authorized() (called per tool stage, deep in a scan)
+    checks expires_at. Anything that decides *before* running the pipeline
+    whether re-verification is needed (the CLI's --self-attest handling,
+    /v1/targets/status) must go through this instead of target.status
+    directly — otherwise a stale 'verified' row reads as still-good, the
+    CLI skips re-attesting, and every stage then gets denied anyway."""
+    if target.status == "verified" and _is_expired(target):
+        return "expired"
+    return target.status
+
+
 def get_target_status(session: Session, identifier: str) -> Target:
     return get_or_create_target(session, identifier)
 
@@ -144,7 +162,7 @@ def require_authorized(session: Session, identifier: str, action: str) -> Target
             f"target '{identifier}' is not verified (status={target.status}). "
             "Verify it first with `scorpion verify-target` or self-attest via `scorpion scan`."
         )
-    if target.expires_at is not None and target.expires_at < datetime.now(timezone.utc):
+    if _is_expired(target):
         raise ScopeDenied(f"target '{identifier}' scope verification expired — re-verify.")
     if action not in (target.authorized_actions or []):
         raise ScopeDenied(f"target '{identifier}' is not authorized for action '{action}'.")

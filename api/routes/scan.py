@@ -13,7 +13,14 @@ from api.schemas import (
     VerifyTargetRequest,
     VerifyTargetResponse,
 )
-from api.scope import ScopeDenied, get_or_create_target, get_target_status, verify_file_token, verify_self_attestation
+from api.scope import (
+    ScopeDenied,
+    effective_status,
+    get_or_create_target,
+    get_target_status,
+    verify_file_token,
+    verify_self_attestation,
+)
 from memory.db import get_session
 from memory.repository import save_findings_for_target
 
@@ -33,7 +40,11 @@ def verify_target(req: VerifyTargetRequest, session: Session = Depends(get_sessi
 def target_status(req: TargetStatusRequest, session: Session = Depends(get_session)) -> TargetStatusResponse:
     target = get_target_status(session, req.target)
     return TargetStatusResponse(
-        status=target.status,
+        # effective_status(), not target.status directly — the DB column
+        # never flips back on its own when a TTL passes, so reading it raw
+        # here would tell the CLI a stale "verified" target is still good,
+        # skip re-attesting, and then have every stage get denied anyway.
+        status=effective_status(target),
         verification_method=target.verification_method,
         expires_at=target.expires_at.isoformat() if target.expires_at else None,
     )

@@ -1,0 +1,7 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.1, pytest-8.3.4, pluggy-1.6.0 -- C:\Users\CybeRMogul\Downloads\Es project\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\CybeRMogul\Downloads\Es project
+configfile: pyproject.toml
+plugins: anyio-4.14.1, langsmith-0.10.2
+collecting ... 
