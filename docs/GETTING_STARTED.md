@@ -82,10 +82,25 @@ summary, and (for `scan`) warnings to a Markdown file — useful for a bug
 bounty submission or client deliverable instead of copying terminal output.
 Findings are sorted by severity (critical first).
 
-`scan` shows live stage-by-stage progress (which of the 8 tools is
-currently running, how long it's been going) rather than sitting silent —
-a real scan against a content-heavy site can take several minutes
-end-to-end (nuclei alone can run ~3000 requests).
+`scan` shows live stage-by-stage progress (which tool is currently
+running, against which host, how long it's been going) rather than
+sitting silent — a real scan against a content-heavy site can take
+several minutes end-to-end (nuclei alone can run ~3000 requests).
+
+### Enumeration
+
+`scan` doesn't just check the one host you give it: subfinder discovers
+its subdomains, httpx probes all of them (one batched call) to find which
+actually respond, and the rest of the pipeline (katana, nmap, nuclei,
+ffuf, dalfox, sqlmap) runs once per live host — a discovered
+`api.example.com` gets the same active scan as `example.com` itself, not
+just a line in a subdomain list. This is capped at 5 hosts by default
+(`SCORPION_MAX_ENUMERATED_HOSTS`) to bound how long a scan takes and how
+much a single target gets hit; anything beyond the cap is still reported
+by subfinder, just not actively scanned, and the warnings say how many
+were dropped. Discovered subdomains inherit the root target's scope
+verification automatically — re-verifying every subdomain individually
+isn't required.
 
 ## Scanning a target you don't own
 
