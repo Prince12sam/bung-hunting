@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     # cold run.
     nuclei_timeout_seconds: int = 300
     ffuf_wordlist_path: str = "docker/tools/ffuf/wordlist.txt"
+    # `scan` enumerates subdomains via subfinder, probes all of them plus the
+    # root with httpx, then runs the rest of the pipeline against every host
+    # that responds — capped here so one target with hundreds of subdomains
+    # can't turn a several-minute scan into a several-hour one. Discovered
+    # hosts beyond this count are still reported by subfinder, just not
+    # actively scanned; a warning says how many were dropped.
+    max_enumerated_hosts: int = 5
 
     # Every target must reach `verified` status via api/scope.py before any
     # active-scan tool call — see docs/SECURITY_AND_AUTHORIZATION.md.

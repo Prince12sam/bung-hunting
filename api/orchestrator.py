@@ -4,11 +4,24 @@ Coordinates external recon/scan tools behind one interface so the Agent
 Core never shells out directly, normalizes every tool's output to one
 finding schema, and enforces the scope gate per invocation.
 
-The pipeline is a declarative list of stages, not a hardcoded if/else
-chain — adding, removing, or reordering a tool is a data change here, not a
-new branch in the run function. Each stage still runs independently: one
-tool failing (ToolError) or being denied scope (ScopeDenied) doesn't stop
-the rest of the pipeline, it's recorded as a warning instead.
+A scan runs in three phases:
+  1. Enumeration — subfinder discovers subdomains of the root target.
+  2. Liveness — httpx probes the root plus every discovered subdomain (one
+     batched container call) to find which actually respond.
+  3. Per-host pipeline — the declarative PIPELINE below (katana, nmap,
+     nuclei, ffuf, dalfox, sqlmap) runs once for every live host, not just
+     the original target. This is what makes a scan real subdomain
+     enumeration instead of a single-host check with a subdomain list
+     attached as a side note.
+
+Every stage — including per-host ones — checks scope against the
+*original* target identifier, not the per-host string: a verified root
+target's discovered subdomains are treated as in-scope automatically
+(most bounty programs cover *.example.com under one root verification),
+per-subdomain re-verification would make a large enumeration result
+unusably slow. One tool failing (ToolError) or being denied scope
+(ScopeDenied) doesn't stop the rest of the pipeline, it's recorded as a
+warning instead.
 """
 
 from dataclasses import dataclass
@@ -16,6 +29,7 @@ from typing import Callable, Literal
 
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api import scan_status
 from api.scope import ACTIVE_SCAN, PASSIVE_RECON, ScopeDenied, require_authorized, resolve_for_container
 from api.tool_router import (
@@ -38,14 +52,13 @@ class ToolStage:
     name: str
     action_class: str  # passive-recon | active-scan — see docs/SECURITY_AND_AUTHORIZATION.md
     runner: Callable[[str], list[dict]]
-    target_form: TargetForm = "host"  # host-only tools (nmap, subfinder) vs URL tools (the rest)
+    target_form: TargetForm = "host"  # host-only tools (nmap) vs URL tools (the rest)
 
 
-# The chain a scan runs. Adding a tool is a data change here plus a matching
-# run_* in tool_router.py — nothing else in this module changes.
+# The per-live-host chain a scan runs, after enumeration + liveness below.
+# Adding a tool is a data change here plus a matching run_* in
+# tool_router.py — nothing else in this module changes.
 PIPELINE: list[ToolStage] = [
-    ToolStage(name="httpx", action_class=PASSIVE_RECON, runner=run_httpx, target_form="host"),
-    ToolStage(name="subfinder", action_class=PASSIVE_RECON, runner=run_subfinder, target_form="host"),
     ToolStage(name="katana", action_class=PASSIVE_RECON, runner=run_katana, target_form="url"),
     ToolStage(name="nmap", action_class=ACTIVE_SCAN, runner=run_nmap, target_form="host"),
     ToolStage(name="nuclei", action_class=ACTIVE_SCAN, runner=run_nuclei, target_form="url"),
@@ -67,23 +80,74 @@ def run_pipeline(session: Session, target: str) -> tuple[list[dict], list[str]]:
     findings: list[dict] = []
     warnings: list[str] = []
     container_target = resolve_for_container(target)
-    host_form = _as_host(container_target)
-    url_form = _as_url(container_target)
+    root_host = _as_host(container_target)
+    root_url = _as_url(container_target)
 
     try:
-        for i, stage in enumerate(PIPELINE, start=1):
-            try:
-                require_authorized(session, target, stage.action_class)
-            except ScopeDenied as exc:
-                warnings.append(f"{stage.name}: skipped — {exc}")
-                continue
+        # --- Phase 1: enumerate subdomains of the root target ---
+        candidate_hosts = {root_host}
+        try:
+            require_authorized(session, target, PASSIVE_RECON)
+            scan_status.set_stage(target, "subfinder (enumeration)", 1, 2)
+            sub_findings = run_subfinder(root_host)
+            findings.extend(sub_findings)
+            candidate_hosts.update(f["host"] for f in sub_findings if f.get("host"))
+        except ScopeDenied as exc:
+            warnings.append(f"subfinder: skipped — {exc}")
+        except ToolError as exc:
+            warnings.append(f"subfinder: {exc}")
 
-            scan_status.set_stage(target, stage.name, i, len(PIPELINE))
-            stage_target = host_form if stage.target_form == "host" else url_form
-            try:
-                findings.extend(stage.runner(stage_target))
-            except ToolError as exc:
-                warnings.append(f"{stage.name}: {exc}")
+        ordered_hosts = [root_host] + sorted(candidate_hosts - {root_host})
+        hosts_to_probe = ordered_hosts[: settings.max_enumerated_hosts]
+        if len(ordered_hosts) > len(hosts_to_probe):
+            dropped = len(ordered_hosts) - len(hosts_to_probe)
+            warnings.append(
+                f"enumeration capped at {settings.max_enumerated_hosts} host(s) — "
+                f"{dropped} discovered subdomain(s) not scanned further "
+                "(raise SCORPION_MAX_ENUMERATED_HOSTS to include more)"
+            )
+
+        # --- Phase 2: find which candidate hosts are actually live ---
+        live_urls: list[str] = []
+        httpx_attempted = False
+        try:
+            require_authorized(session, target, PASSIVE_RECON)
+            scan_status.set_stage(target, "httpx (liveness)", 2, 2)
+            httpx_attempted = True
+            httpx_findings = run_httpx(hosts_to_probe)
+            findings.extend(httpx_findings)
+            live_urls = [f["live_url"] for f in httpx_findings if f.get("live_url")]
+        except ScopeDenied as exc:
+            warnings.append(f"httpx: skipped — {exc}")
+        except ToolError as exc:
+            warnings.append(f"httpx: {exc}")
+
+        if not live_urls:
+            live_urls = [root_url]
+            if httpx_attempted:
+                warnings.append(
+                    "no host responded to httpx — falling back to scanning the root target directly"
+                )
+
+        # --- Phase 3: run the rest of the pipeline against every live host ---
+        total = len(live_urls) * len(PIPELINE)
+        done = 0
+        for url in live_urls:
+            host = _as_host(url)
+            for stage in PIPELINE:
+                done += 1
+                try:
+                    require_authorized(session, target, stage.action_class)
+                except ScopeDenied as exc:
+                    warnings.append(f"{stage.name} ({host}): skipped — {exc}")
+                    continue
+
+                scan_status.set_stage(target, f"{stage.name} ({host})", done, total)
+                stage_target = host if stage.target_form == "host" else url
+                try:
+                    findings.extend(stage.runner(stage_target))
+                except ToolError as exc:
+                    warnings.append(f"{stage.name} ({host}): {exc}")
     finally:
         scan_status.clear(target)
 

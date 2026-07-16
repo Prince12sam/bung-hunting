@@ -95,7 +95,9 @@ def git_commit(repo_path: Path, message: str) -> None:
     )
 
 
-def _run_docker(cmd: list[str], tool_name: str, timeout: int | None = None) -> subprocess.CompletedProcess:
+def _run_docker(
+    cmd: list[str], tool_name: str, timeout: int | None = None, stdin_text: str | None = None
+) -> subprocess.CompletedProcess:
     """Every caller here builds cmd as ["docker", "run", "--rm", ...]. This
     inserts an explicit --name so a timeout can actually stop the container.
 
@@ -110,7 +112,9 @@ def _run_docker(cmd: list[str], tool_name: str, timeout: int | None = None) -> s
     container_name = f"scorpion-{tool_name}-{uuid.uuid4().hex[:12]}"
     named_cmd = cmd[:3] + ["--name", container_name] + cmd[3:]
     try:
-        result = subprocess.run(named_cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
+        result = subprocess.run(
+            named_cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, input=stdin_text
+        )
     except FileNotFoundError as exc:
         raise ToolError("docker CLI not found — Docker Desktop must be installed and running") from exc
     except subprocess.TimeoutExpired as exc:
@@ -145,14 +149,23 @@ def _parse_json_lines(text: str) -> list[dict]:
     return rows
 
 
-def run_httpx(host: str) -> list[dict]:
-    """HTTP fingerprinting via projectdiscovery/httpx, containerized."""
+def run_httpx(hosts: str | list[str]) -> list[dict]:
+    """HTTP fingerprinting via projectdiscovery/httpx, containerized.
+
+    Accepts one host or a batch — batching every candidate host (the root
+    target plus everything subfinder discovered) into a single container
+    via stdin is httpx's own documented usage (`cat hosts.txt | httpx`) and
+    is far cheaper than spinning up one container per host to find out
+    which ones are actually alive.
+    """
+    host_list = [hosts] if isinstance(hosts, str) else hosts
+    stdin_text = "\n".join(host_list) + "\n"
     cmd = [
-        "docker", "run", "--rm",
+        "docker", "run", "--rm", "-i",
         settings.httpx_docker_image,
-        "-u", host, "-silent", "-json", "-status-code", "-title", "-tech-detect", "-server",
+        "-silent", "-json", "-status-code", "-title", "-tech-detect", "-server",
     ]
-    result = _run_docker(cmd, "httpx")
+    result = _run_docker(cmd, "httpx", stdin_text=stdin_text)
     if result.returncode != 0 and not result.stdout.strip():
         raise ToolError(f"httpx failed (exit {result.returncode}): {result.stderr[-2000:]}")
 
@@ -167,14 +180,19 @@ def run_httpx(host: str) -> list[dict]:
         status = r.get("status_code")
         title = r.get("title", "")
         tech = ", ".join(r.get("tech", []) or [])
+        url = r.get("url", "")
         findings.append(
             {
                 "source_tool": "httpx",
                 "severity": "info",
-                "title": f"HTTP {status} — {r.get('url', host)}",
+                "title": f"HTTP {status} — {url or host_list[0]}",
                 "description": f"title={title!r} server={r.get('webserver', '')!r} tech={tech}",
                 "file_path": None,
                 "line": None,
+                # The live URL this host actually responded on — used to feed
+                # the rest of the pipeline per discovered/live host, not just
+                # kept as display text like the other fields here.
+                "live_url": url or None,
             }
         )
     return findings
@@ -262,6 +280,10 @@ def run_subfinder(domain: str) -> list[dict]:
                 "description": f"source: {r.get('source', '')}",
                 "file_path": None,
                 "line": None,
+                # Bare hostname for the orchestrator to feed into the
+                # liveness probe / per-host pipeline — see run_httpx's
+                # "live_url" for the same pattern on the other end of it.
+                "host": host,
             }
         )
     return findings
