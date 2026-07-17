@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # fixed template set like nuclei — genuinely slower on a real site with
     # real content, budget generously.
     zap_full_scan_timeout_seconds: int = 900
+    sqlmap_timeout_seconds: int = 300
+    # confirm_impact=True (--dbs/--current-db/--banner, gated behind the
+    # SOW-granted "exploitation" tier) needs blind extraction that can run
+    # far longer than plain detection, especially for boolean-blind
+    # injection — measured real runs taking several minutes even against a
+    # trivial target, budget generously.
+    sqlmap_confirm_impact_timeout_seconds: int = 900
     ffuf_wordlist_path: str = "docker/tools/ffuf/wordlist.txt"
     # `scan` enumerates subdomains via subfinder, probes all of them plus the
     # root with httpx, then runs the rest of the pipeline against every host

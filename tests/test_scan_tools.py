@@ -5,8 +5,10 @@ integration works, matched against a local, hermetic HTTP server."""
 
 import functools
 import http.server
+import sqlite3
 import tempfile
 import threading
+import urllib.parse
 from pathlib import Path
 
 from api.config import settings
@@ -109,6 +111,68 @@ def test_sqlmap_runs_a_real_scan_cleanly():
         httpd.shutdown()
         tmpdir.cleanup()
     assert findings == []
+
+
+class _VulnerableSqliteHandler(http.server.BaseHTTPRequestHandler):
+    """Deliberately vulnerable: raw string interpolation into SQL, no
+    parameterization — a real, working SQLi for confirm_impact to
+    actually confirm, not a mock."""
+
+    db_path: str = ""
+
+    def do_GET(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        product_id = params.get("id", ["1"])[0]
+        conn = sqlite3.connect(self.db_path)
+        try:
+            rows = conn.execute(f"SELECT id, name FROM products WHERE id = {product_id}").fetchall()
+            body = "".join(f"<p>{r[0]}: {r[1]}</p>" for r in rows).encode()
+            self.send_response(200)
+        except sqlite3.Error as exc:
+            body = f"DB error: {exc}".encode()
+            self.send_response(500)
+        finally:
+            conn.close()
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):  # noqa: A002 - matches BaseHTTPRequestHandler's signature
+        pass
+
+
+def _start_vulnerable_sqlite_server(port: int) -> tuple[http.server.ThreadingHTTPServer, tempfile.TemporaryDirectory]:
+    tmpdir = tempfile.TemporaryDirectory()
+    db_path = str(Path(tmpdir.name) / "vuln.db")
+    conn = sqlite3.connect(db_path)
+    conn.execute("CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT)")
+    conn.execute("INSERT INTO products (id, name) VALUES (1, 'widget')")
+    conn.commit()
+    conn.close()
+
+    handler = type("_Handler", (_VulnerableSqliteHandler,), {"db_path": db_path})
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, tmpdir
+
+
+def test_sqlmap_confirm_impact_extracts_real_evidence():
+    """Regression: confirm_impact's --dbs/--current-db/--banner mode hung
+    the full configured timeout despite --batch, because _run_docker left
+    stdin to inherit from the calling process instead of explicitly
+    closing it (fixed by always setting stdin=DEVNULL when no stdin_text
+    is given). This asserts confirm_impact actually completes and extracts
+    real evidence from a genuinely vulnerable target, not a mock."""
+    port = 8798
+    httpd, tmpdir = _start_vulnerable_sqlite_server(port)
+    try:
+        findings = run_sqlmap(f"http://{TARGET_HOST}:{port}/?id=1", confirm_impact=True)
+    finally:
+        httpd.shutdown()
+        tmpdir.cleanup()
+
+    assert any(f["title"].startswith("confirmed impact:") for f in findings)
 
 
 def test_zap_baseline_runs_a_real_scan_cleanly():

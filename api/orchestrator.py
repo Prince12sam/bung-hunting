@@ -31,7 +31,15 @@ from sqlalchemy.orm import Session
 
 from api.config import settings
 from api import scan_status
-from api.scope import ACTIVE_SCAN, PASSIVE_RECON, ScopeDenied, require_authorized, resolve_for_container
+from api.scope import (
+    ACTIVE_SCAN,
+    EXPLOITATION,
+    PASSIVE_RECON,
+    ScopeDenied,
+    has_authorization,
+    require_authorized,
+    resolve_for_container,
+)
 from api.tool_router import (
     ToolError,
     run_dalfox,
@@ -53,8 +61,14 @@ TargetForm = Literal["host", "url"]
 class ToolStage:
     name: str
     action_class: str  # passive-recon | active-scan — see docs/SECURITY_AND_AUTHORIZATION.md
-    runner: Callable[[str], list[dict]]
+    runner: Callable[..., list[dict]]
     target_form: TargetForm = "host"  # host-only tools (nmap) vs URL tools (the rest)
+    # If set, the runner is called with confirm_impact=<bool> based on
+    # whether this scope tier is held — e.g. EXPLOITATION, grantable only
+    # via a parsed SOW (api/sow.py). None means the runner takes no such
+    # kwarg. This is what lets a new tool opt into scope-gated escalation
+    # as a plain data change here, with no orchestrator code change needed.
+    escalation_class: str | None = None
 
 
 # The per-live-host chain a scan runs, after enumeration + liveness below.
@@ -67,7 +81,9 @@ PIPELINE: list[ToolStage] = [
     ToolStage(name="nuclei", action_class=ACTIVE_SCAN, runner=run_nuclei, target_form="url"),
     ToolStage(name="ffuf", action_class=ACTIVE_SCAN, runner=run_ffuf, target_form="url"),
     ToolStage(name="dalfox", action_class=ACTIVE_SCAN, runner=run_dalfox, target_form="url"),
-    ToolStage(name="sqlmap", action_class=ACTIVE_SCAN, runner=run_sqlmap, target_form="url"),
+    ToolStage(
+        name="sqlmap", action_class=ACTIVE_SCAN, runner=run_sqlmap, target_form="url", escalation_class=EXPLOITATION
+    ),
     # A different scanning engine than nuclei/dalfox/sqlmap, run last since
     # zap-full-scan is by far the slowest stage (it actively attacks every
     # spidered page/param, not a fixed template set).
@@ -151,8 +167,16 @@ def run_pipeline(session: Session, target: str) -> tuple[list[dict], list[str]]:
 
                 scan_status.set_stage(target, f"{stage.name} ({host})", done, total)
                 stage_target = host if stage.target_form == "host" else url
+                # This checks scope, it doesn't skip it: require_authorized
+                # above already gated whether the stage runs at all — this
+                # only decides *how* it runs when it's escalatable.
+                kwargs = (
+                    {"confirm_impact": has_authorization(session, target, stage.escalation_class)}
+                    if stage.escalation_class
+                    else {}
+                )
                 try:
-                    findings.extend(stage.runner(stage_target))
+                    findings.extend(stage.runner(stage_target, **kwargs))
                 except ToolError as exc:
                     warnings.append(f"{stage.name} ({host}): {exc}")
     finally:

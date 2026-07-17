@@ -19,6 +19,12 @@ from memory.models import Target
 
 PASSIVE_RECON = "passive-recon"
 ACTIVE_SCAN = "active-scan"
+# Confirming a vulnerability's real impact (e.g. enumerating what a SQLi
+# actually exposes), not just detecting it. Deliberately grantable ONLY
+# via verify_sow() below — self-attestation and file-token verification
+# cannot include this in authorized_actions no matter what, since a
+# one-line chat statement isn't strong enough authorization for it.
+EXPLOITATION = "exploitation"
 
 
 class ScopeDenied(Exception):
@@ -114,6 +120,26 @@ def verify_self_attestation(session: Session, identifier: str, statement: str) -
     return target
 
 
+def verify_sow(session: Session, identifier: str, sow_text: str, parsed: dict) -> Target:
+    """The only path that can grant EXPLOITATION — `parsed` is api/sow.py's
+    LLM analysis of a real SOW document. The full SOW text is stored on
+    the row so the specific authorization behind an exploitation action is
+    always traceable later, same accountability principle as self-attestation.
+    """
+    target = get_or_create_target(session, identifier)
+    actions = [PASSIVE_RECON, ACTIVE_SCAN]
+    if parsed.get("exploitation_authorized"):
+        actions.append(EXPLOITATION)
+    target.status = "verified"
+    target.verification_method = f"sow: {parsed.get('reasoning', '')[:400]}"
+    target.authorized_actions = actions
+    target.sow_text = sow_text
+    target.expires_at = _ttl_expiry()
+    session.commit()
+    session.refresh(target)
+    return target
+
+
 def _is_expired(target: Target) -> bool:
     return target.expires_at is not None and target.expires_at < datetime.now(timezone.utc)
 
@@ -168,3 +194,16 @@ def require_authorized(session: Session, identifier: str, action: str) -> Target
         raise ScopeDenied(f"target '{identifier}' is not authorized for action '{action}'.")
 
     return target
+
+
+def has_authorization(session: Session, identifier: str, action: str) -> bool:
+    """Non-raising variant of require_authorized — for a runtime decision
+    (e.g. whether sqlmap escalates past detection) rather than gating
+    whether a stage runs at all. The orchestrator still calls
+    require_authorized() separately before actually running any stage;
+    this only decides how a stage runs, never whether it does."""
+    try:
+        require_authorized(session, identifier, action)
+        return True
+    except ScopeDenied:
+        return False

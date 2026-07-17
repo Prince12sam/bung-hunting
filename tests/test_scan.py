@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from api.config import settings
 from api.main import app
+from api.scope import EXPLOITATION, get_or_create_target, has_authorization, verify_sow
 from api.tool_router import run_httpx, run_nmap
 from memory.db import SessionLocal
 from memory.models import Target
@@ -72,6 +73,47 @@ def test_self_attestation_updates_scope_without_touching_a_real_host():
 
     after = client.post("/v1/targets/status", json={"target": target}).json()
     assert after["status"] == "verified"
+
+
+def test_self_attestation_never_grants_exploitation():
+    """The 'exploitation' tier (sqlmap confirming real impact, not just
+    detecting it) must only ever come from a parsed SOW — self-attestation
+    is a one-line chat-adjacent statement, nowhere near strong enough."""
+    client = TestClient(app)
+    target = _unique_test_domain()
+    client.post("/v1/targets/self-attest", json={"target": target, "statement": "test: I own this"})
+
+    session = SessionLocal()
+    try:
+        assert not has_authorization(session, target, EXPLOITATION)
+    finally:
+        session.close()
+
+
+def test_verify_sow_grants_exploitation_only_when_parsed_result_says_so():
+    session = SessionLocal()
+    try:
+        target_a = _unique_test_domain()
+        verify_sow(
+            session, target_a, "a real SOW", {"targets": [target_a], "exploitation_authorized": True, "reasoning": "x"}
+        )
+        assert has_authorization(session, target_a, EXPLOITATION)
+
+        target_b = _unique_test_domain()
+        verify_sow(
+            session,
+            target_b,
+            "a vague SOW",
+            {"targets": [target_b], "exploitation_authorized": False, "reasoning": "y"},
+        )
+        assert not has_authorization(session, target_b, EXPLOITATION)
+
+        # passive-recon/active-scan are unaffected either way — verify_sow
+        # doesn't downgrade the tiers self-attestation/file-token also grant.
+        row_a = get_or_create_target(session, target_a)
+        assert row_a.sow_text == "a real SOW"
+    finally:
+        session.close()
 
 
 def test_expired_verification_reports_as_expired_not_verified():

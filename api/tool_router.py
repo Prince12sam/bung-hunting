@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -112,9 +113,20 @@ def _run_docker(
     timeout = timeout if timeout is not None else settings.tool_timeout_seconds
     container_name = f"scorpion-{tool_name}-{uuid.uuid4().hex[:12]}"
     named_cmd = cmd[:3] + ["--name", container_name] + cmd[3:]
+    # Never let this inherit the calling process's own stdin. subprocess.run
+    # only sets stdin=PIPE when input= is not None, so every caller without
+    # stdin_text (everything except httpx's batch mode) would otherwise
+    # inherit whatever fd this process happens to have. That's harmless
+    # under a normal `scorpion serve` (its own stdin is explicitly DEVNULL —
+    # see cli/server.py) but a real hang risk under `serve --foreground`
+    # (inherits a live terminal) or any ad-hoc script: confirmed sqlmap's
+    # confirm_impact mode hang the full configured timeout on an
+    # interactive prompt --batch should have auto-answered, once stdin
+    # wasn't deterministically closed.
+    stdin_kwargs = {"input": stdin_text} if stdin_text is not None else {"stdin": subprocess.DEVNULL}
     try:
         result = subprocess.run(
-            named_cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, input=stdin_text
+            named_cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, **stdin_kwargs
         )
     except FileNotFoundError as exc:
         raise ToolError("docker CLI not found — Docker Desktop must be installed and running") from exc
@@ -431,16 +443,78 @@ def run_dalfox(url: str) -> list[dict]:
     return findings
 
 
-def run_sqlmap(url: str) -> list[dict]:
-    """SQL injection test via googlesky/sqlmap. Active-scan: injects
-    payloads into request parameters — never run against a target without
-    an explicit, verified active-scan authorization."""
+def _parse_sqlmap_impact(output: str, url: str) -> list[dict]:
+    """Parses the extra output confirm_impact=True's flags produce.
+    Enumeration only (database names, current DB, version banner) — never
+    data extraction, which stays a separate, even-more-explicit capability
+    this doesn't implement."""
+    findings = []
+
+    current_db = re.search(r"current database:\s*'([^']*)'", output, re.IGNORECASE)
+    if current_db:
+        findings.append(
+            {
+                "source_tool": "sqlmap",
+                "severity": "high",
+                "title": f"confirmed impact: current database — {current_db.group(1)}",
+                "description": f"enumerated via the confirmed injection point @ {url} (no data extracted)",
+                "file_path": None,
+                "line": None,
+            }
+        )
+
+    banner = re.search(r"banner:\s*'([^']*)'", output, re.IGNORECASE)
+    if banner:
+        findings.append(
+            {
+                "source_tool": "sqlmap",
+                "severity": "high",
+                "title": f"confirmed impact: DBMS banner — {banner.group(1)}",
+                "description": f"version banner retrieved via the confirmed injection point @ {url}",
+                "file_path": None,
+                "line": None,
+            }
+        )
+
+    dbs = re.search(r"available databases \[\d+\]:\s*((?:\n\[\*\] .+)+)", output)
+    if dbs:
+        names = [line.strip("[*] \r") for line in dbs.group(1).strip().splitlines()]
+        findings.append(
+            {
+                "source_tool": "sqlmap",
+                "severity": "high",
+                "title": f"confirmed impact: {len(names)} database(s) enumerated",
+                "description": f"available databases: {', '.join(names)} (enumeration only, no data extracted)",
+                "file_path": None,
+                "line": None,
+            }
+        )
+
+    return findings
+
+
+def run_sqlmap(url: str, confirm_impact: bool = False) -> list[dict]:
+    """SQL injection test via googlesky/sqlmap. Active-scan by default:
+    injects payloads to detect injectability only — never run against a
+    target without an explicit, verified active-scan authorization.
+
+    confirm_impact=True additionally enumerates the active database name,
+    DBMS version banner, and available database names as proof of real
+    impact. The caller (api/orchestrator.py) only ever passes this True
+    after checking the target has the stronger "exploitation" scope tier
+    (api/scope.py), which only a parsed SOW can grant — never self-attestation
+    or file-token verification. Still no data extraction (--dump) or shell
+    access, which stays a separate, even-more-explicit capability this
+    doesn't implement.
+    """
+    extra_args = ["--dbs", "--current-db", "--banner"] if confirm_impact else []
+    timeout = settings.sqlmap_confirm_impact_timeout_seconds if confirm_impact else settings.sqlmap_timeout_seconds
     cmd = [
         "docker", "run", "--rm",
         settings.sqlmap_docker_image,
-        "-u", url, "--batch", "--level=1", "--risk=1",
+        "-u", url, "--batch", "--level=1", "--risk=1", *extra_args,
     ]
-    result = _run_docker(cmd, "sqlmap", timeout=settings.nuclei_timeout_seconds)
+    result = _run_docker(cmd, "sqlmap", timeout=timeout)
     if result.returncode not in (0, 1):
         raise ToolError(f"sqlmap failed (exit {result.returncode}): {result.stderr[-2000:]}")
 
@@ -459,6 +533,10 @@ def run_sqlmap(url: str) -> list[dict]:
                         "line": None,
                     }
                 )
+
+    if confirm_impact:
+        findings.extend(_parse_sqlmap_impact(output, url))
+
     return findings
 
 

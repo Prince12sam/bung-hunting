@@ -131,6 +131,20 @@ skipped, per stage, until one of the above succeeds. Active-scan tools
 (nmap, nuclei, ffuf, dalfox, sqlmap) send real requests/payloads — only
 authorize something you're actually allowed to test.
 
+- **SOW (strongest, unlocks exploitation)** — `scorpion authorize-sow
+  <target> <path-to-sow-file>` reads a real Statement of Work; an LLM
+  extracts only what it explicitly grants. This is the only path that can
+  additionally unlock the **exploitation** tier: when a SOW explicitly
+  authorizes confirming a vulnerability's real impact (not just detecting
+  it), sqlmap escalates to enumerate the current database, DBMS version
+  banner, and available database names — proof of impact, never full data
+  extraction (`--dump`) or shell access, which this doesn't implement.
+  Self-attestation and file-token verification can never grant this tier;
+  ambiguous SOW language ("penetration test" alone) doesn't either — it
+  fails closed. Requires an LLM configured. The full SOW text is stored
+  against the target, same accountability principle as a logged
+  self-attestation statement.
+
 ## Without an LLM key configured
 
 `analyze` still runs semgrep and returns raw findings; the summary field

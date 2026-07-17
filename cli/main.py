@@ -1,4 +1,5 @@
 import threading
+from pathlib import Path
 
 import httpx
 import typer
@@ -300,6 +301,45 @@ def verify_target(
         console.print(f"[red]{result['error']}[/red]")
         raise typer.Exit(1)
     console.print(f"[green]{target} is now {result['status']} ({result['verification_method']})[/green]")
+
+
+@app.command("authorize-sow")
+def authorize_sow(
+    target: str = typer.Argument(..., help="Domain/host the SOW authorizes (must be explicitly named in the document)"),
+    sow_file: str = typer.Argument(..., help="Path to the Statement of Work document (plain text/Markdown)"),
+) -> None:
+    """Authorize a target from a real Statement of Work — the only path that
+    can grant the stronger 'exploitation' tier (e.g. sqlmap confirming real
+    impact, not just detecting injectability). An LLM reads the document and
+    extracts only what it explicitly grants; ambiguous language never
+    authorizes exploitation. Requires an LLM configured (SCORPION_CODING_MODELS)."""
+    try:
+        sow_text = Path(sow_file).read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        console.print(f"[red]Could not read {sow_file}: {exc}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        result = post("/v1/targets/authorize-sow", {"target": target, "sow_text": sow_text})
+    except httpx.ConnectError:
+        _connection_error_hint()
+        raise typer.Exit(1)
+
+    if result.get("error"):
+        console.print(f"[red]{result['error']}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]{target} is now {result['status']} ({result['verification_method']})[/green]")
+    if result["exploitation_authorized"]:
+        console.print(
+            "[yellow]Exploitation authorized — sqlmap will confirm real impact "
+            "(database enumeration) where injection is found, not just detect it.[/yellow]"
+        )
+    else:
+        console.print(
+            "[dim]Exploitation not authorized by this SOW — active-scan tools stay at "
+            "detection-only.[/dim]"
+        )
 
 
 if __name__ == "__main__":

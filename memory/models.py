@@ -51,6 +51,10 @@ class Target(Base):
     authorized_actions: Mapped[list] = mapped_column(JSON, default=list)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # Full SOW text, kept only when the "exploitation" tier was granted via
+    # api/sow.py — the accountability record behind that specific decision,
+    # same principle as self-attestation's logged statement.
+    sow_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Finding(Base):

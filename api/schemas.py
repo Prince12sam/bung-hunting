@@ -86,3 +86,15 @@ class ScanProgressResponse(BaseModel):
     stage_index: int | None = None
     stage_total: int | None = None
     elapsed_seconds: float | None = None
+
+
+class SowAuthorizeRequest(BaseModel):
+    target: str
+    sow_text: str
+
+
+class SowAuthorizeResponse(BaseModel):
+    status: str
+    verification_method: str | None = None
+    exploitation_authorized: bool = False
+    error: str | None = None

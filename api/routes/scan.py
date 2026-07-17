@@ -8,19 +8,24 @@ from api.schemas import (
     ScanRequest,
     ScanResponse,
     SelfAttestRequest,
+    SowAuthorizeRequest,
+    SowAuthorizeResponse,
     TargetStatusRequest,
     TargetStatusResponse,
     VerifyTargetRequest,
     VerifyTargetResponse,
 )
 from api.scope import (
+    EXPLOITATION,
     ScopeDenied,
     effective_status,
     get_or_create_target,
     get_target_status,
     verify_file_token,
     verify_self_attestation,
+    verify_sow,
 )
+from api.sow import SowParseError, parse_sow
 from memory.db import get_session
 from memory.repository import save_findings_for_target
 
@@ -54,6 +59,31 @@ def target_status(req: TargetStatusRequest, session: Session = Depends(get_sessi
 def self_attest(req: SelfAttestRequest, session: Session = Depends(get_session)) -> VerifyTargetResponse:
     target = verify_self_attestation(session, req.target, req.statement)
     return VerifyTargetResponse(status=target.status, verification_method=target.verification_method)
+
+
+@router.post("/targets/authorize-sow", response_model=SowAuthorizeResponse)
+def authorize_sow(req: SowAuthorizeRequest, session: Session = Depends(get_session)) -> SowAuthorizeResponse:
+    try:
+        parsed = parse_sow(req.sow_text)
+    except SowParseError as exc:
+        return SowAuthorizeResponse(status="unverified", error=str(exc))
+
+    if req.target not in parsed.get("targets", []):
+        return SowAuthorizeResponse(
+            status="unverified",
+            error=(
+                f"'{req.target}' is not among the targets explicitly named in the SOW "
+                f"({parsed.get('targets', [])}) — refusing to authorize a target the "
+                "document doesn't actually cover."
+            ),
+        )
+
+    target = verify_sow(session, req.target, req.sow_text, parsed)
+    return SowAuthorizeResponse(
+        status=target.status,
+        verification_method=target.verification_method,
+        exploitation_authorized=EXPLOITATION in (target.authorized_actions or []),
+    )
 
 
 @router.get("/scan/progress", response_model=ScanProgressResponse)
