@@ -54,6 +54,19 @@ class ScanResponse(BaseModel):
     summary: str
 
 
+class ScanApiRequest(BaseModel):
+    target: str
+    spec: str
+    target_override: str | None = None
+    auth_header: str | None = None
+
+
+class ScanApiResponse(BaseModel):
+    findings: list[Finding]
+    warnings: list[str]
+    summary: str
+
+
 class VerifyTargetRequest(BaseModel):
     target: str
     token: str

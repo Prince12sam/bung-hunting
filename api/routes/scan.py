@@ -3,7 +3,10 @@ from sqlalchemy.orm import Session
 
 from api import scan_status
 from api.agents.pentest_agent import scan as run_scan
+from api.agents.pentest_agent import summarize_findings
 from api.schemas import (
+    ScanApiRequest,
+    ScanApiResponse,
     ScanProgressResponse,
     ScanRequest,
     ScanResponse,
@@ -16,16 +19,19 @@ from api.schemas import (
     VerifyTargetResponse,
 )
 from api.scope import (
+    ACTIVE_SCAN,
     EXPLOITATION,
     ScopeDenied,
     effective_status,
     get_or_create_target,
     get_target_status,
+    require_authorized,
     verify_file_token,
     verify_self_attestation,
     verify_sow,
 )
 from api.sow import SowParseError, parse_sow
+from api.tool_router import ToolError, run_zap_api_scan
 from memory.db import get_session
 from memory.repository import save_findings_for_target
 
@@ -112,3 +118,30 @@ def scan_target(req: ScanRequest, session: Session = Depends(get_session)) -> Sc
         result["warnings"].append(f"findings were not persisted to Memory: {exc}")
 
     return ScanResponse(findings=result["findings"], warnings=result["warnings"], summary=result["summary"])
+
+
+@router.post("/scan-api", response_model=ScanApiResponse)
+def scan_api_target(req: ScanApiRequest, session: Session = Depends(get_session)) -> ScanApiResponse:
+    warnings: list[str] = []
+    findings: list[dict] = []
+
+    try:
+        require_authorized(session, req.target, ACTIVE_SCAN)
+    except ScopeDenied as exc:
+        warnings.append(f"zap-api-scan: skipped — {exc}")
+        return ScanApiResponse(findings=[], warnings=warnings, summary="No findings.")
+
+    try:
+        findings = run_zap_api_scan(req.spec, target_override=req.target_override, auth_header=req.auth_header)
+    except ToolError as exc:
+        warnings.append(f"zap-api-scan: {exc}")
+
+    try:
+        target_row = get_or_create_target(session, req.target)
+        save_findings_for_target(session, target_row, findings)
+    except Exception as exc:  # noqa: BLE001 - Memory being down shouldn't hide scan results
+        session.rollback()
+        warnings.append(f"findings were not persisted to Memory: {exc}")
+
+    summary = summarize_findings(findings, warnings)
+    return ScanApiResponse(findings=findings, warnings=warnings, summary=summary)

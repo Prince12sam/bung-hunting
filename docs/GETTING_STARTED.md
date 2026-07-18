@@ -75,12 +75,29 @@ scorpion fix path/to/repo --apply --commit   # + commits if tests pass
 scorpion scan localhost                # local/private targets auto-verify, scans immediately
 scorpion scan some-target.example       # prompts for self-attestation (see below)
 scorpion verify-target some-target.example --token <token>   # stronger, provable verification
+
+scorpion scan-api some-target.example --spec openapi.json                  # test every endpoint the spec declares
+scorpion scan-api some-target.example --spec openapi.json \
+  --auth-header "Authorization: Bearer <token>"                            # authenticated endpoints too
 ```
 
-Add `--report path/to/file.md` to `analyze` or `scan` to also write the findings,
-summary, and (for `scan`) warnings to a Markdown file — useful for a bug
-bounty submission or client deliverable instead of copying terminal output.
-Findings are sorted by severity (critical first).
+Add `--report path/to/file.md` to `analyze`, `scan`, or `scan-api` to also
+write the findings, summary, and warnings to a Markdown file — useful for a
+bug bounty submission or client deliverable instead of copying terminal
+output. Findings are sorted by severity (critical first).
+
+### Testing API endpoints specifically
+
+`scan`'s tools (katana, zap-baseline/full-scan, nuclei, ffuf, dalfox,
+sqlmap) only reach endpoints reachable by crawling or fuzzing an
+unauthenticated GET — most real API routes (POST-only, behind login, JSON
+bodies) are invisible to that. `scan-api` uses OWASP ZAP's zap-api-scan
+against an OpenAPI/Swagger definition instead: it reads every declared
+endpoint/parameter and tests each directly, with `--auth-header` injecting
+a token/header into every request so authenticated routes are reachable
+too. `--spec` accepts a URL or a local file path. `--target-url` overrides
+the API host from the spec if it isn't directly reachable from inside the
+scan container.
 
 `scan` shows live stage-by-stage progress (which tool is currently
 running, against which host, how long it's been going) rather than

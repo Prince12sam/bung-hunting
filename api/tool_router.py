@@ -618,3 +618,68 @@ def run_zap_full_scan(url: str) -> list[dict]:
     return _run_zap_packaged_scan(
         url, "zap-full-scan.py", "zap-full-scan", settings.zap_full_scan_timeout_seconds
     )
+
+
+def run_zap_api_scan(
+    spec: str, target_override: str | None = None, auth_header: str | None = None
+) -> list[dict]:
+    """API endpoint scan via OWASP ZAP's zap-api-scan.py — takes an
+    OpenAPI/Swagger definition and tests every endpoint/parameter it
+    declares, active-scan style. This is what reaches API routes a crawl
+    (katana/zap-baseline/zap-full-scan) can never discover on its own:
+    POST-only routes, JSON bodies, anything not linked from an HTML page.
+
+    `spec` is a URL to fetch the definition from, or a local file path
+    (mounted into the container read-only). `target_override` (-O) points
+    requests at the actual reachable API host when the spec's own base
+    URL isn't directly reachable from inside the container.
+    `auth_header` (e.g. "Authorization: Bearer <token>") is injected into
+    every request via a ZAP Replacer rule — most real API endpoints worth
+    testing are behind auth, so without this most of the surface is
+    untestable. Active-scan: sends real requests against every defined
+    operation, never run without verified authorization.
+    """
+    volume_args: list[str] = []
+    spec_arg = spec
+    if not spec.startswith(("http://", "https://")):
+        spec_path = Path(spec).resolve()
+        if not spec_path.exists():
+            raise ToolError(f"API spec file not found: {spec_path}")
+        # Mounted under a path distinct from the report-output volume below
+        # (both under /zap/wrk would collide: a file mount and a directory
+        # mount at overlapping paths is fragile depending on Docker's mount
+        # order).
+        volume_args = ["-v", f"{spec_path}:/zap/spec/openapi.json:ro"]
+        spec_arg = "/zap/spec/openapi.json"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        report_name = "zap-api-report.json"
+        cmd = [
+            "docker", "run", "--rm",
+            *volume_args,
+            "-v", f"{Path(tmp_dir).resolve()}:/zap/wrk/:rw",
+            settings.zap_docker_image,
+            "zap-api-scan.py", "-t", spec_arg, "-f", "openapi", "-J", report_name,
+        ]
+        if target_override:
+            cmd += ["-O", target_override]
+        if auth_header:
+            header_name, _, header_value = auth_header.partition(":")
+            cmd += [
+                "-z",
+                (
+                    "-config replacer.full_list(0).description=auth "
+                    "-config replacer.full_list(0).enabled=true "
+                    "-config replacer.full_list(0).matchtype=REQ_HEADER "
+                    f"-config replacer.full_list(0).matchstr={header_name.strip()} "
+                    "-config replacer.full_list(0).regex=false "
+                    f"-config replacer.full_list(0).replacement={header_value.strip()}"
+                ),
+            ]
+
+        result = _run_docker(cmd, "zap-api-scan", timeout=settings.zap_api_scan_timeout_seconds)
+        report_path = Path(tmp_dir) / report_name
+        if result.returncode not in (0, 1, 2) or not report_path.exists():
+            raise ToolError(f"zap-api-scan failed (exit {result.returncode}): {result.stderr[-2000:]}")
+
+        return _parse_zap_report(report_path, "zap-api-scan")

@@ -36,6 +36,38 @@ def _connection_error_hint() -> None:
     )
 
 
+def _ensure_target_verified(target: str, self_attest: str | None) -> None:
+    """Shared by every command that scans a target: checks scope, and if
+    it isn't verified, self-attests (non-interactively if --self-attest
+    was given, otherwise an interactive prompt). Raises typer.Exit(1) if
+    the user declines."""
+    status = post("/v1/targets/status", {"target": target})
+    if status["status"] == "verified":
+        return
+
+    statement = self_attest
+    if not statement:
+        console.print(
+            f"[yellow]Target '{target}' isn't verified — no one has technically proven "
+            "control over it.[/yellow]"
+        )
+        if not typer.confirm(
+            f"Do you personally attest that you own or are explicitly authorized to test "
+            f"'{target}'? This is logged against the target, not a blanket approval."
+        ):
+            console.print(
+                "Not scanning. For a stronger, provable verification instead, use "
+                "[bold]scorpion verify-target[/bold] (file-token method)."
+            )
+            raise typer.Exit(1)
+        statement = typer.prompt(
+            'Briefly state your authorization (e.g. "I own this domain", "bug bounty program X")'
+        )
+
+    attest = post("/v1/targets/self-attest", {"target": target, "statement": statement})
+    console.print(f"[dim]Recorded: {attest['verification_method']}[/dim]")
+
+
 @app.command()
 def launch() -> None:
     """Start everything: checks Docker, brings up Postgres, builds the ffuf
@@ -178,33 +210,10 @@ def scan(
     for a real, provable verification.
     """
     try:
-        status = post("/v1/targets/status", {"target": target})
+        _ensure_target_verified(target, self_attest)
     except httpx.ConnectError:
         _connection_error_hint()
         raise typer.Exit(1)
-
-    if status["status"] != "verified":
-        statement = self_attest
-        if not statement:
-            console.print(
-                f"[yellow]Target '{target}' isn't verified — no one has technically proven "
-                "control over it.[/yellow]"
-            )
-            if not typer.confirm(
-                f"Do you personally attest that you own or are explicitly authorized to test "
-                f"'{target}'? This is logged against the target, not a blanket approval."
-            ):
-                console.print(
-                    "Not scanning. For a stronger, provable verification instead, use "
-                    "[bold]scorpion verify-target[/bold] (file-token method)."
-                )
-                raise typer.Exit(1)
-            statement = typer.prompt(
-                'Briefly state your authorization (e.g. "I own this domain", "bug bounty program X")'
-            )
-
-        attest = post("/v1/targets/self-attest", {"target": target, "statement": statement})
-        console.print(f"[dim]Recorded: {attest['verification_method']}[/dim]")
 
     console.print(
         "[dim]Running the full pipeline — against a real site this can take several "
@@ -280,6 +289,78 @@ def scan(
     if report:
         content = render_markdown(
             "Scorpion Pentest Report", target, findings, result["summary"], warnings=result["warnings"]
+        )
+        out = write_report(report, content)
+        console.print(f"[dim]Report written to {out}[/dim]")
+
+
+@app.command("scan-api")
+def scan_api(
+    target: str = typer.Argument(..., help="Domain/host this scan is scoped to (used for the scope gate)"),
+    spec: str = typer.Option(..., "--spec", help="OpenAPI/Swagger definition — URL or local file path"),
+    target_url: str = typer.Option(
+        None, "--target-url", help="Override the API host if the spec's own base URL isn't directly reachable"
+    ),
+    auth_header: str = typer.Option(
+        None, "--auth-header", help='Header injected into every request, e.g. "Authorization: Bearer <token>"'
+    ),
+    self_attest: str = typer.Option(
+        None,
+        "--self-attest",
+        help="Non-interactively attest ownership/authorization with this statement",
+    ),
+    report: str = typer.Option(
+        None, "--report", help="Also write the findings to a Markdown report at this path"
+    ),
+) -> None:
+    """API-spec-driven scan (OWASP ZAP's zap-api-scan) — tests every
+    endpoint/parameter an OpenAPI/Swagger definition declares, including
+    authenticated ones via --auth-header. Reaches routes a crawl-based
+    `scan` can never discover on its own: POST-only endpoints, JSON
+    bodies, anything not linked from an HTML page."""
+    try:
+        _ensure_target_verified(target, self_attest)
+    except httpx.ConnectError:
+        _connection_error_hint()
+        raise typer.Exit(1)
+
+    console.print("[dim]Running zap-api-scan against every endpoint the spec declares...[/dim]")
+
+    try:
+        result = post(
+            "/v1/scan-api",
+            {"target": target, "spec": spec, "target_override": target_url, "auth_header": auth_header},
+            timeout=SCAN_TIMEOUT,
+        )
+    except httpx.ConnectError:
+        _connection_error_hint()
+        raise typer.Exit(1)
+    except httpx.HTTPStatusError as exc:
+        console.print(f"[red]Agent Core error: {exc.response.text}[/red]")
+        raise typer.Exit(1)
+
+    for w in result["warnings"]:
+        console.print(f"[yellow]{w}[/yellow]")
+
+    findings = result["findings"]
+    if not findings:
+        console.print("[green]No findings.[/green]")
+    else:
+        table = Table(title=f"{len(findings)} finding(s)")
+        table.add_column("Tool")
+        table.add_column("Severity")
+        table.add_column("Title")
+        table.add_column("Description")
+        for f in findings:
+            table.add_row(f["source_tool"], f["severity"], f["title"], f["description"][:80])
+        console.print(table)
+
+    console.print("\n[bold]Summary[/bold]")
+    console.print(result["summary"])
+
+    if report:
+        content = render_markdown(
+            "Scorpion API Scan Report", target, findings, result["summary"], warnings=result["warnings"]
         )
         out = write_report(report, content)
         console.print(f"[dim]Report written to {out}[/dim]")

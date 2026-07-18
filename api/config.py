@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # fixed template set like nuclei — genuinely slower on a real site with
     # real content, budget generously.
     zap_full_scan_timeout_seconds: int = 900
+    zap_api_scan_timeout_seconds: int = 300
     sqlmap_timeout_seconds: int = 300
     # confirm_impact=True (--dbs/--current-db/--banner, gated behind the
     # SOW-granted "exploitation" tier) needs blind extraction that can run

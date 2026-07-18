@@ -5,6 +5,7 @@ integration works, matched against a local, hermetic HTTP server."""
 
 import functools
 import http.server
+import json
 import sqlite3
 import tempfile
 import threading
@@ -19,6 +20,7 @@ from api.tool_router import (
     run_nuclei,
     run_sqlmap,
     run_subfinder,
+    run_zap_api_scan,
     run_zap_baseline,
     run_zap_full_scan,
 )
@@ -205,3 +207,58 @@ def test_zap_full_scan_runs_a_real_scan_cleanly():
     assert len(findings) > 0
     assert all(f["source_tool"] == "zap-full-scan" for f in findings)
     assert all(f["severity"] in ("info", "low", "medium", "high") for f in findings)
+
+
+class _JsonApiHandler(http.server.BaseHTTPRequestHandler):
+    """A route deliberately unlinked from any page — only discoverable via
+    its OpenAPI spec, never by a crawl (katana/zap-baseline/zap-full-scan)."""
+
+    def do_GET(self):
+        if self.path.startswith("/products/"):
+            body = json.dumps({"id": self.path.rsplit("/", 1)[-1], "name": "widget"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):  # noqa: A002 - matches BaseHTTPRequestHandler's signature
+        pass
+
+
+def test_zap_api_scan_reaches_an_endpoint_only_the_spec_declares():
+    """Regression: this is the whole point of zap-api-scan over
+    zap-baseline/zap-full-scan — it must reach a route nothing links to,
+    driven entirely by the OpenAPI definition."""
+    port = 8800
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), _JsonApiHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Test API", "version": "1.0.0"},
+        "servers": [{"url": f"http://{TARGET_HOST}:{port}"}],
+        "paths": {
+            "/products/{id}": {
+                "get": {
+                    "summary": "Get product by id",
+                    "parameters": [{"name": "id", "in": "path", "required": True, "schema": {"type": "integer"}}],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+    }
+    tmpdir = tempfile.TemporaryDirectory()
+    spec_path = Path(tmpdir.name) / "openapi.json"
+    spec_path.write_text(json.dumps(spec))
+
+    try:
+        findings = run_zap_api_scan(str(spec_path))
+    finally:
+        httpd.shutdown()
+        tmpdir.cleanup()
+
+    assert all(f["source_tool"] == "zap-api-scan" for f in findings)
