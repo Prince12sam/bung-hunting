@@ -1,4 +1,5 @@
-"""One-shot startup: Docker check -> Postgres -> ffuf image -> Agent Core.
+"""One-shot startup: Docker check -> browser image -> Postgres/compose
+services -> ffuf image -> Agent Core.
 
 Exists because getting Scorpion running has always meant several manual
 steps done in the right order (is Docker even up? is Postgres healthy? is
@@ -12,12 +13,15 @@ import subprocess
 import time
 from pathlib import Path
 
+import httpx
+
 from api.config import settings
 from cli import server as server_lifecycle
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOCKER_DIR = PROJECT_ROOT / "docker"
 FFUF_DOCKERFILE_DIR = DOCKER_DIR / "tools" / "ffuf"
+BROWSER_DOCKERFILE_DIR = DOCKER_DIR / "tools" / "browser"
 
 Step = tuple[bool, str]
 
@@ -122,6 +126,57 @@ def _ensure_ffuf_image() -> Step:
     return True, f"Built {settings.ffuf_docker_image}."
 
 
+def _browser_image_exists() -> bool:
+    result = subprocess.run(
+        ["docker", "image", "inspect", settings.browser_sandbox_docker_image], capture_output=True
+    )
+    return result.returncode == 0
+
+
+def _ensure_browser_image() -> Step:
+    if _browser_image_exists():
+        return True, f"{settings.browser_sandbox_docker_image} already built."
+
+    result = subprocess.run(
+        ["docker", "build", "-t", settings.browser_sandbox_docker_image, str(BROWSER_DOCKERFILE_DIR)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    if result.returncode != 0:
+        return False, f"browser sandbox image build failed: {result.stderr.strip()[-500:]}"
+    return True, f"Built {settings.browser_sandbox_docker_image}."
+
+
+def _browser_sandbox_ready() -> bool:
+    url = f"http://{settings.browser_sandbox_host}:{settings.browser_cdp_port}/json/version"
+    try:
+        return httpx.get(url, timeout=3).status_code == 200
+    except httpx.HTTPError:
+        return False
+
+
+def _ensure_browser_sandbox() -> Step:
+    """Best-effort, same non-blocking shape as _ensure_msf_services: docker
+    compose up -d (in _ensure_postgres above) already started
+    browser_sandbox alongside everything else in the compose file — this
+    just waits for Chromium to actually finish starting inside it. A scan's
+    adaptive-loop browser actions degrade to a skipped/failed warning on
+    their own if the sandbox isn't reachable yet, same as any other tool
+    outage, so this was never a reason to block the Agent Core."""
+    if _browser_sandbox_ready():
+        return True, "Browser sandbox already healthy."
+
+    for _ in range(15):
+        if _browser_sandbox_ready():
+            return True, "Browser sandbox started and healthy."
+        time.sleep(2)
+    return True, (
+        "Browser sandbox not ready yet — check `docker compose logs browser_sandbox` if it "
+        "never comes up. Adaptive-loop browser actions will report skipped until it is."
+    )
+
+
 def launch() -> list[Step]:
     """Runs the full startup sequence, stopping at the first failed step."""
     steps: list[Step] = []
@@ -137,6 +192,16 @@ def launch() -> list[Step]:
         return steps
     steps.append((True, "Docker is running."))
 
+    # browser_sandbox is a docker-compose service (unlike ffuf, a one-shot
+    # `docker run` tool never referenced in docker-compose.yml) — its image
+    # must exist *before* _ensure_postgres()'s `docker compose up -d`
+    # brings up the whole compose file, or that call fails trying to start
+    # a container from an image that doesn't exist yet.
+    ok, msg = _ensure_browser_image()
+    steps.append((ok, msg))
+    if not ok:
+        return steps
+
     ok, msg = _ensure_postgres()
     steps.append((ok, msg))
     if not ok:
@@ -148,6 +213,7 @@ def launch() -> list[Step]:
         return steps
 
     steps.append(_ensure_msf_services())
+    steps.append(_ensure_browser_sandbox())
 
     ok, msg = server_lifecycle.start()
     steps.append((ok, msg))

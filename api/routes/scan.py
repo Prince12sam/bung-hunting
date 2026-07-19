@@ -108,7 +108,7 @@ def scan_progress(target: str) -> ScanProgressResponse:
 
 @router.post("/scan", response_model=ScanResponse)
 def scan_target(req: ScanRequest, session: Session = Depends(get_session)) -> ScanResponse:
-    result = run_scan(session, req.target)
+    result = run_scan(session, req.target, adaptive=req.adaptive)
 
     report_requirements: list[str] = []
     try:

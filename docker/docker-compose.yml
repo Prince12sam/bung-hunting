@@ -68,6 +68,22 @@ services:
       - ./msf/start.sh:/start.sh:ro
     entrypoint: ["/bin/bash", "/start.sh"]
 
+  # Sandboxed Chromium for the adaptive planning loop's structured browser
+  # actions (api/browser_client.py) — a real Xvfb virtual display + real
+  # browser, not a bare headless API. Locally built, no maintained public
+  # image fits (see docker/tools/browser/Dockerfile). Long-lived like
+  # msf_rpc above, not a one-shot `docker run --rm` tool container, since
+  # the browser process needs to stay up across actions within a scan.
+  # Ephemeral by design — no volume, so no cookies/state ever persist
+  # between different targets.
+  browser_sandbox:
+    image: scorpion/browser-sandbox:local
+    container_name: scorpion_browser_sandbox
+    restart: unless-stopped
+    shm_size: "1gb"
+    ports:
+      - "${BROWSER_CDP_PORT:-9223}:9223"
+
 volumes:
   es_pg_data:
   msf_pg_data:

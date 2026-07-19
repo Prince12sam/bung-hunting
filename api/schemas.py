@@ -46,6 +46,9 @@ class FixApplyResponse(BaseModel):
 
 class ScanRequest(BaseModel):
     target: str
+    # Runs the adaptive planning loop (api/agents/adaptive_agent.py) as an
+    # extra phase after the fixed pipeline — additive, not a replacement.
+    adaptive: bool = False
 
 
 class ScanResponse(BaseModel):

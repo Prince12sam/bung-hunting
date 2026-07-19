@@ -11,6 +11,11 @@ cloud provider or a local model (Ollama).
 `scan` doesn't just check the one host you give it — it enumerates
 subdomains, probes which are actually live, and runs the full active-scan
 chain against every live host it finds, not just the original target.
+`scan --adaptive` adds an optional extra phase on top: an LLM-driven
+planning loop that picks its own follow-up actions — including driving a
+real, sandboxed browser (navigate/click/fill/extract) — based on what the
+fixed pipeline found, from a fixed, pre-vetted action list with the same
+scope gate every other tool goes through.
 
 ## Status
 

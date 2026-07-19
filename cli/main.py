@@ -263,6 +263,13 @@ def scan(
     report: str = typer.Option(
         None, "--report", help="Also write the findings to a Markdown report at this path"
     ),
+    adaptive: bool = typer.Option(
+        False,
+        "--adaptive",
+        help="After the fixed pipeline finishes, run an LLM-driven planning loop that picks "
+        "its own follow-up actions (existing tools, and browser_sandbox navigate/click/fill) "
+        "based on what's been found — additive, not a replacement for the fixed pipeline",
+    ),
 ) -> None:
     """Orchestrator-driven recon + active scan chain (Pentest Agent).
 
@@ -281,17 +288,32 @@ def scan(
         "[dim]Running the full pipeline — against a real site this can take several "
         "minutes (nuclei alone can run ~3000 requests). Live stage progress below.[/dim]"
     )
+    if adaptive:
+        console.print(
+            "[dim]--adaptive: an extra planning-loop phase runs afterward, capped at "
+            "SCORPION_ADAPTIVE_AGENT_MAX_STEPS steps — can add significant extra time.[/dim]"
+        )
+
+    # The fixed pipeline's own SCAN_TIMEOUT budget doesn't account for the
+    # adaptive loop's extra steps (each up to one tool's own timeout) —
+    # generously padded rather than precisely computed, since this is only
+    # the CLI's own wait: a client-side read-timeout here doesn't stop the
+    # scan, which keeps running server-side regardless (see the
+    # httpx.ReadTimeout handling below).
+    scan_timeout = SCAN_TIMEOUT + 3600 if adaptive else SCAN_TIMEOUT
 
     try:
         result = _run_tracked(
-            target, "Starting scan...", lambda: post("/v1/scan", {"target": target}, timeout=SCAN_TIMEOUT)
+            target,
+            "Starting scan...",
+            lambda: post("/v1/scan", {"target": target, "adaptive": adaptive}, timeout=scan_timeout),
         )
     except httpx.ConnectError:
         _connection_error_hint()
         raise typer.Exit(1)
     except httpx.ReadTimeout:
         console.print(
-            f"[red]No response after {SCAN_TIMEOUT}s.[/red] The scan may still be running "
+            f"[red]No response after {scan_timeout}s.[/red] The scan may still be running "
             "server-side — the Agent Core doesn't cancel work just because the CLI stopped "
             "waiting. Check its findings later rather than re-running immediately."
         )

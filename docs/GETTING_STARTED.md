@@ -5,7 +5,10 @@ and a Pentest Agent (`scan`, chaining httpx, subfinder, amass, theHarvester,
 gau, katana, nmap, nuclei, nikto, testssl.sh, WPScan, ffuf, feroxbuster,
 Arjun, dalfox, sqlmap, OWASP ZAP, and a Metasploit auxiliary/scanner
 module) behind one CLI, with an LLM router that works with either a cloud
-provider or a local model (Ollama).
+provider or a local model (Ollama). `scan --adaptive` adds an optional
+extra phase afterward: an LLM-driven planning loop that picks its own
+follow-up actions — including driving a real, sandboxed browser
+(navigate/click/fill/extract) — based on what the fixed pipeline found.
 
 Written and verified on Windows and Linux — see docs/WINDOWS.md /
 docs/LINUX.md for what's different (and what actually went wrong and got
@@ -44,16 +47,19 @@ cd ..
 
 # ffuf has no maintained official Docker image — build it once from source:
 docker build -t scorpion/ffuf:local docker/tools/ffuf
+
+# sandboxed browser for `scan --adaptive` — also built once from source:
+docker build -t scorpion/browser-sandbox:local docker/tools/browser
 ```
 
 ## Run it
 
 ```
-scorpion launch    # the one command: checks Docker, starts Postgres if
-                    # needed, builds the ffuf image if missing, starts the
-                    # Agent Core. Safe to re-run any time — every step is
-                    # idempotent, so this is what to run each time you sit
-                    # down to use Scorpion.
+scorpion launch    # the one command: checks Docker, builds the ffuf/browser-
+                    # sandbox images if missing, starts Postgres/Metasploit/
+                    # the browser sandbox, starts the Agent Core. Safe to
+                    # re-run any time — every step is idempotent, so this is
+                    # what to run each time you sit down to use Scorpion.
 ```
 
 Or manage the Agent Core on its own:
@@ -164,6 +170,29 @@ by subfinder/amass, just not actively scanned, and the warnings say how
 many were dropped. Discovered subdomains inherit the root target's scope
 verification automatically — re-verifying every subdomain individually
 isn't required.
+
+### Adaptive planning loop (`--adaptive`)
+
+`scan --adaptive` runs an extra phase after the fixed pipeline above, not
+instead of it: an LLM looks at what's been found so far and decides what
+to try next — following an interesting lead, trying a discovered login
+form — rather than always running the same tools in the same order. It
+can call the same tools the fixed pipeline does (targeted at a specific
+URL rather than the whole pipeline), and it can drive a real, sandboxed
+Chromium browser (`browser_sandbox`, started by `scorpion launch` like
+Postgres/Metasploit): navigate, extract page text/forms, take a
+screenshot, click a link/button, or fill a form field. It only ever picks
+from a fixed, pre-vetted list of actions — never arbitrary commands — and
+every single action re-checks the scope gate independently, same as any
+other tool. Clicking/filling (state-changing) needs the `exploitation`
+tier — a real SOW via `scorpion authorize-sow`, not self-attestation —
+the same boundary already used for sqlmap's impact-confirmation mode.
+It stops on its own once the LLM decides there's nothing more worth
+trying, after `SCORPION_ADAPTIVE_AGENT_MAX_STEPS` steps (15 by default),
+or after `SCORPION_ADAPTIVE_AGENT_STALE_AFTER_STEPS` (3 by default)
+consecutive steps that found nothing new — whichever comes first. Because
+it's an extra LLM-driven phase on top of an already-thorough fixed
+pipeline, expect real added time; it's opt-in for that reason.
 
 ## Scanning a target you don't own
 

@@ -155,6 +155,34 @@ class Settings(BaseSettings):
     # until the job leaves running/waiting), not msfrpcd's own timeout.
     msf_module_timeout_seconds: int = 120
 
+    # Sandboxed browser (docker/docker-compose.yml's browser_sandbox) — a
+    # long-lived service like msf_rpc above, connected to over the Chrome
+    # DevTools Protocol (see api/browser_client.py). No official/public
+    # image fits, built locally from docker/tools/browser/Dockerfile.
+    browser_sandbox_docker_image: str = "scorpion/browser-sandbox:local"
+    # The Agent Core runs on the host, not inside a container, so it
+    # reaches browser_sandbox via the port docker-compose publishes to the
+    # host — localhost, same as msf_rpc_host below, NOT
+    # container_host_alias (that setting is for the opposite direction:
+    # something *inside* a container reaching the host).
+    browser_sandbox_host: str = "localhost"
+    # Recent Chromium versions bind the DevTools port to loopback only
+    # regardless of --remote-debugging-address (confirmed for real) —
+    # docker/tools/browser/start.sh bridges it out via socat on this port,
+    # not the container's raw internal DevTools port (9222).
+    browser_cdp_port: int = 9223
+    browser_action_timeout_seconds: int = 30
+
+    # Adaptive planning loop (api/agents/adaptive_agent.py) — an optional
+    # extra phase after the fixed PIPELINE (`scan --adaptive`), not a
+    # replacement for it. Hard cap so one run can't loop indefinitely
+    # racking up LLM calls/tool invocations.
+    adaptive_agent_max_steps: int = 15
+    # Stops early if this many consecutive steps produced zero new
+    # findings — no point spending further LLM calls once nothing new is
+    # surfacing.
+    adaptive_agent_stale_after_steps: int = 3
+
     # Every target must reach `verified` status via api/scope.py before any
     # active-scan tool call — see docs/SECURITY_AND_AUTHORIZATION.md.
     scope_verification_ttl_days: int = 30
