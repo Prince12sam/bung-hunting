@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 import typer
 from rich.console import Console
-from rich.live import Live
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from api.correlate import correlate_findings
@@ -69,6 +69,61 @@ def _ensure_target_verified(target: str, self_attest: str | None) -> None:
     console.print(f"[dim]Recorded: {attest['verification_method']}[/dim]")
 
 
+def _run_tracked(key: str, description: str, func):
+    """Runs `func` (a zero-arg callable performing the actual blocking
+    POST) in a background thread while polling /v1/scan/progress (keyed
+    by `key` — a target string for scan/scan-api, a local path for
+    analyze/fix, since scan_status is just keyed by arbitrary string) to
+    show a live spinner with the current server-side stage and elapsed
+    time. Every long-running command uses this instead of blocking
+    silently — found the hard way that a terminal showing nothing for
+    minutes is indistinguishable from a hang.
+
+    Re-raises whatever exception `func` raised, on the main thread, so
+    each caller's existing httpx exception handling around the call
+    keeps working unchanged.
+    """
+    outcome: dict = {}
+
+    def _run() -> None:
+        try:
+            outcome["result"] = func()
+        except Exception as exc:  # noqa: BLE001 - re-raised on the main thread below
+            outcome["error"] = exc
+
+    worker = threading.Thread(target=_run, daemon=True)
+    worker.start()
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task(description, total=None)
+        while worker.is_alive():
+            try:
+                info = http_get("/v1/scan/progress", params={"target": key})
+            except Exception:  # noqa: BLE001 - progress polling is best-effort, never fatal
+                info = {"running": False}
+            if info.get("running"):
+                progress.update(
+                    task,
+                    description=(
+                        f"{info['stage']} (stage {info['stage_index']}/{info['stage_total']}, "
+                        f"{info['elapsed_seconds']:.0f}s)"
+                    ),
+                )
+            else:
+                progress.update(task, description=description)
+            worker.join(timeout=0.5)
+
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["result"]
+
+
 @app.command()
 def launch() -> None:
     """Start everything: checks Docker, brings up Postgres, builds the ffuf
@@ -118,7 +173,7 @@ def analyze(
 ) -> None:
     """Static security review of local code (Coding Agent, no network activity)."""
     try:
-        result = post("/v1/analyze", {"path": path})
+        result = _run_tracked(path, "Running semgrep...", lambda: post("/v1/analyze", {"path": path}))
     except httpx.ConnectError:
         _connection_error_hint()
         raise typer.Exit(1)
@@ -160,7 +215,9 @@ def fix(
 ) -> None:
     """Find issues and propose a patch (Coding Agent). Nothing touches disk without --apply."""
     try:
-        proposal = post("/v1/fix/propose", {"path": path})
+        proposal = _run_tracked(
+            path, "Analyzing and generating patch...", lambda: post("/v1/fix/propose", {"path": path})
+        )
     except httpx.ConnectError:
         _connection_error_hint()
         raise typer.Exit(1)
@@ -183,7 +240,11 @@ def fix(
         console.print("\n[dim]Re-run with --apply to write this to disk and run tests.[/dim]")
         return
 
-    apply_result = post("/v1/fix/apply", {"path": path, "diff": proposal["diff"], "commit": commit})
+    apply_result = _run_tracked(
+        path,
+        "Applying patch and running tests...",
+        lambda: post("/v1/fix/apply", {"path": path, "diff": proposal["diff"], "commit": commit}),
+    )
     if apply_result.get("error"):
         console.print(f"[yellow]{apply_result['error']}[/yellow]")
     console.print(f"Applied: {apply_result['applied']}  Committed: {apply_result['committed']}")
@@ -221,52 +282,23 @@ def scan(
         "minutes (nuclei alone can run ~3000 requests). Live stage progress below.[/dim]"
     )
 
-    outcome: dict = {}
-
-    def _run_scan() -> None:
-        try:
-            outcome["result"] = post("/v1/scan", {"target": target}, timeout=SCAN_TIMEOUT)
-        except Exception as exc:  # noqa: BLE001 - re-raised on the main thread below
-            outcome["error"] = exc
-
-    worker = threading.Thread(target=_run_scan, daemon=True)
-    worker.start()
-
-    with Live(console=console, refresh_per_second=2, transient=True) as live:
-        while worker.is_alive():
-            try:
-                progress = http_get("/v1/scan/progress", params={"target": target})
-            except Exception:  # noqa: BLE001 - progress polling is best-effort, never fatal
-                progress = {"running": False}
-
-            if progress.get("running"):
-                live.update(
-                    f"[cyan]Running: {progress['stage']}[/cyan] "
-                    f"(stage {progress['stage_index']}/{progress['stage_total']}, "
-                    f"{progress['elapsed_seconds']:.0f}s elapsed)"
-                )
-            else:
-                live.update("[dim]Starting…[/dim]")
-            worker.join(timeout=1)
-
-    if "error" in outcome:
-        exc = outcome["error"]
-        if isinstance(exc, httpx.ConnectError):
-            _connection_error_hint()
-            raise typer.Exit(1)
-        if isinstance(exc, httpx.ReadTimeout):
-            console.print(
-                f"[red]No response after {SCAN_TIMEOUT}s.[/red] The scan may still be running "
-                "server-side — the Agent Core doesn't cancel work just because the CLI stopped "
-                "waiting. Check its findings later rather than re-running immediately."
-            )
-            raise typer.Exit(1)
-        if isinstance(exc, httpx.HTTPStatusError):
-            console.print(f"[red]Agent Core error: {exc.response.text}[/red]")
-            raise typer.Exit(1)
-        raise exc
-
-    result = outcome["result"]
+    try:
+        result = _run_tracked(
+            target, "Starting scan...", lambda: post("/v1/scan", {"target": target}, timeout=SCAN_TIMEOUT)
+        )
+    except httpx.ConnectError:
+        _connection_error_hint()
+        raise typer.Exit(1)
+    except httpx.ReadTimeout:
+        console.print(
+            f"[red]No response after {SCAN_TIMEOUT}s.[/red] The scan may still be running "
+            "server-side — the Agent Core doesn't cancel work just because the CLI stopped "
+            "waiting. Check its findings later rather than re-running immediately."
+        )
+        raise typer.Exit(1)
+    except httpx.HTTPStatusError as exc:
+        console.print(f"[red]Agent Core error: {exc.response.text}[/red]")
+        raise typer.Exit(1)
 
     for w in result["warnings"]:
         console.print(f"[yellow]{w}[/yellow]")
@@ -325,13 +357,15 @@ def scan_api(
         _connection_error_hint()
         raise typer.Exit(1)
 
-    console.print("[dim]Running zap-api-scan against every endpoint the spec declares...[/dim]")
-
     try:
-        result = post(
-            "/v1/scan-api",
-            {"target": target, "spec": spec, "target_override": target_url, "auth_header": auth_header},
-            timeout=SCAN_TIMEOUT,
+        result = _run_tracked(
+            target,
+            "Running zap-api-scan...",
+            lambda: post(
+                "/v1/scan-api",
+                {"target": target, "spec": spec, "target_override": target_url, "auth_header": auth_header},
+                timeout=SCAN_TIMEOUT,
+            ),
         )
     except httpx.ConnectError:
         _connection_error_hint()

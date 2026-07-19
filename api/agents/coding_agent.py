@@ -3,6 +3,7 @@ from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from api import scan_status
 from api.config import settings
 from api.llm_router import LLMUnavailable, complete
 from api.tool_router import ToolError, git_apply_patch, git_commit, run_semgrep, run_tests
@@ -16,6 +17,7 @@ class AnalyzeState(TypedDict):
 
 
 def _scan_node(state: AnalyzeState) -> AnalyzeState:
+    scan_status.set_stage(state["path"], "semgrep", 1, 2)
     try:
         findings = run_semgrep(Path(state["path"]))
     except ToolError as exc:
@@ -25,11 +27,14 @@ def _scan_node(state: AnalyzeState) -> AnalyzeState:
 
 def _summarize_node(state: AnalyzeState) -> AnalyzeState:
     if state.get("error"):
+        scan_status.clear(state["path"])
         return state
     findings = state["findings"]
     if not findings:
+        scan_status.clear(state["path"])
         return {**state, "summary": "No findings."}
 
+    scan_status.set_stage(state["path"], "summarize (LLM)", 2, 2)
     listing = "\n".join(
         f"- [{f['severity']}] {f['title']} ({f['file_path']}:{f['line']}) — {f['description']}"
         for f in findings
@@ -43,6 +48,8 @@ def _summarize_node(state: AnalyzeState) -> AnalyzeState:
         summary = complete([{"role": "user", "content": prompt}], purpose="coding")
     except LLMUnavailable as exc:
         summary = f"(LLM summary unavailable: {exc})\n{len(findings)} finding(s) — see raw list."
+    finally:
+        scan_status.clear(state["path"])
     return {**state, "summary": summary}
 
 
@@ -74,6 +81,7 @@ class FixState(TypedDict):
 
 
 def _fix_scan_node(state: FixState) -> FixState:
+    scan_status.set_stage(state["path"], "semgrep", 1, 2)
     try:
         findings = run_semgrep(Path(state["path"]))
     except ToolError as exc:
@@ -122,8 +130,10 @@ def _strip_markdown_fences(text: str) -> str:
 
 def _fix_patch_node(state: FixState) -> FixState:
     if state.get("error") or not state["findings"]:
+        scan_status.clear(state["path"])
         return {**state, "diff": ""}
 
+    scan_status.set_stage(state["path"], "generating patch (LLM)", 2, 2)
     findings = state["findings"][: settings.fix_max_findings_per_patch]
     listing = "\n".join(
         f"- [{f['severity']}] {f['title']} ({f['file_path']}:{f['line']}) — {f['description']}"
@@ -142,6 +152,8 @@ def _fix_patch_node(state: FixState) -> FixState:
         diff = complete([{"role": "user", "content": prompt}], purpose="coding")
     except LLMUnavailable as exc:
         return {**state, "diff": "", "error": str(exc)}
+    finally:
+        scan_status.clear(state["path"])
     return {**state, "diff": _strip_markdown_fences(diff)}
 
 
@@ -190,7 +202,11 @@ def apply_fix(path: str, diff: str, do_commit: bool) -> tuple[bool, bool, str, s
     except ToolError as exc:
         return False, False, "", str(exc)
 
-    passed, output = run_tests(repo_path)
+    scan_status.set_stage(path, "running tests", 1, 1)
+    try:
+        passed, output = run_tests(repo_path)
+    finally:
+        scan_status.clear(path)
     if not passed:
         return True, False, output, "tests failed after applying patch — not committing"
 

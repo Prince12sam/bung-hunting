@@ -131,10 +131,13 @@ def scan_api_target(req: ScanApiRequest, session: Session = Depends(get_session)
         warnings.append(f"zap-api-scan: skipped — {exc}")
         return ScanApiResponse(findings=[], warnings=warnings, summary="No findings.")
 
+    scan_status.set_stage(req.target, "zap-api-scan", 1, 2)
     try:
         findings = run_zap_api_scan(req.spec, target_override=req.target_override, auth_header=req.auth_header)
     except ToolError as exc:
         warnings.append(f"zap-api-scan: {exc}")
+    finally:
+        scan_status.clear(req.target)
 
     try:
         target_row = get_or_create_target(session, req.target)
@@ -143,5 +146,9 @@ def scan_api_target(req: ScanApiRequest, session: Session = Depends(get_session)
         session.rollback()
         warnings.append(f"findings were not persisted to Memory: {exc}")
 
-    summary = summarize_findings(findings, warnings)
+    scan_status.set_stage(req.target, "summarize (LLM)", 2, 2)
+    try:
+        summary = summarize_findings(findings, warnings)
+    finally:
+        scan_status.clear(req.target)
     return ScanApiResponse(findings=findings, warnings=warnings, summary=summary)

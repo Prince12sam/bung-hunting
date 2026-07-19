@@ -111,10 +111,11 @@ too. `--spec` accepts a URL or a local file path. `--target-url` overrides
 the API host from the spec if it isn't directly reachable from inside the
 scan container.
 
-`scan` shows live stage-by-stage progress (which tool is currently
-running, against which host, how long it's been going) rather than
-sitting silent — a real scan against a content-heavy site can take
-several minutes end-to-end (nuclei alone can run ~3000 requests).
+Every long-running command (`analyze`, `fix`, `scan`, `scan-api`) shows a
+live spinner with the current stage and elapsed time rather than sitting
+silent — a real `scan` against a content-heavy site can take several
+minutes end-to-end (nuclei alone can run ~3000 requests), and a terminal
+showing nothing for that long is indistinguishable from a hang.
 
 ### Enumeration
 
