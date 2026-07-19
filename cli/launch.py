@@ -44,9 +44,15 @@ def _postgres_healthy() -> bool:
 
 
 def _ensure_postgres() -> Step:
-    if _postgres_healthy():
-        return True, "Postgres already healthy."
-
+    """Also the step that brings up every other service in
+    docker-compose.yml (msf_postgres, msf_rpc, browser_sandbox) — `docker
+    compose up -d` is always run here, never skipped just because
+    Postgres itself is already healthy. Regression found for real: an
+    earlier version returned early in that case, so on a machine that
+    already had Scorpion running, a newly-added compose service (e.g.
+    browser_sandbox) never got created at all — `docker compose up -d` is
+    idempotent (a no-op for anything already running), so there's no cost
+    to always calling it."""
     if not (DOCKER_DIR / ".env").exists():
         return False, (
             "docker/.env is missing — one-time setup step: "
@@ -62,6 +68,9 @@ def _ensure_postgres() -> Step:
     )
     if result.returncode != 0:
         return False, f"docker compose up failed: {result.stderr.strip()[-500:]}"
+
+    if _postgres_healthy():
+        return True, "Postgres already healthy."
 
     for _ in range(30):
         if _postgres_healthy():
