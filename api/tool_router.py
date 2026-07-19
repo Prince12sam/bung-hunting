@@ -1216,3 +1216,56 @@ def run_theharvester(domain: str) -> list[dict]:
             )
 
         return findings
+
+
+def run_arjun(url: str) -> list[dict]:
+    """Hidden HTTP GET parameter discovery via trickest/arjun — probes ~50
+    default candidate parameter names (plus heuristic guesses drawn from
+    the page itself) and flags ones that measurably change the response,
+    surfacing undocumented parameters (e.g. debug/admin/internal-only
+    flags) other tools have no way to guess. GET-only (never --post),
+    since a hidden GET parameter is far less likely to change target state
+    than a POST one — still active-scan (real differential requests
+    against the target), just the more conservative half of what Arjun
+    can do.
+
+    Confirmed for real: a genuinely unreachable target still exits 0 and
+    writes `{url: {}}` (empty dict, not a list) rather than raising —
+    handled below by only treating a list value as real results.
+    """
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        report_name = "arjun.json"
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{Path(tmp_dir).resolve()}:/out:rw",
+            settings.arjun_docker_image,
+            "-u", url, "--get", "-o", f"/out/{report_name}",
+        ]
+        result = _run_docker(cmd, "arjun", timeout=settings.arjun_timeout_seconds)
+        report_path = Path(tmp_dir) / report_name
+        if result.returncode != 0 and not report_path.exists():
+            raise ToolError(f"arjun failed (exit {result.returncode}): {result.stderr[-2000:]}")
+        if not report_path.exists():
+            return []
+
+        try:
+            data = json.loads(report_path.read_text(encoding="utf-8", errors="replace"))
+        except json.JSONDecodeError as exc:
+            raise ToolError(f"could not parse arjun output: {exc}") from exc
+
+        findings = []
+        for target_url, params in data.items():
+            if not isinstance(params, list):
+                continue
+            for param in params:
+                findings.append(
+                    {
+                        "source_tool": "arjun",
+                        "severity": "info",
+                        "title": f"hidden parameter discovered: {param}",
+                        "description": f"{target_url} accepts an undocumented GET parameter '{param}'",
+                        "file_path": None,
+                        "line": None,
+                    }
+                )
+        return findings

@@ -46,6 +46,7 @@ from api.scope import (
 from api.tool_router import (
     ToolError,
     run_amass,
+    run_arjun,
     run_dalfox,
     run_feroxbuster,
     run_ffuf,
@@ -120,6 +121,10 @@ PIPELINE: list[ToolStage] = [
     # discovered directories rather than one flat pass), so it often
     # surfaces different paths.
     ToolStage(name="feroxbuster", action_class=ACTIVE_SCAN, runner=run_feroxbuster, target_form="url"),
+    # Attack-surface expansion, not path discovery — flags undocumented GET
+    # parameters ffuf/feroxbuster's wordlists wouldn't find (they discover
+    # paths, not query parameters).
+    ToolStage(name="arjun", action_class=ACTIVE_SCAN, runner=run_arjun, target_form="url"),
     ToolStage(name="dalfox", action_class=ACTIVE_SCAN, runner=run_dalfox, target_form="url"),
     ToolStage(
         name="sqlmap", action_class=ACTIVE_SCAN, runner=run_sqlmap, target_form="url", escalation_class=EXPLOITATION

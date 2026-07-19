@@ -2,10 +2,10 @@
 
 Scorpion is a local-first AI security platform: a Coding Agent (`analyze`/`fix`)
 and a Pentest Agent (`scan`, chaining httpx, subfinder, amass, theHarvester,
-katana, nmap, nuclei, nikto, testssl.sh, WPScan, ffuf, feroxbuster, dalfox,
-sqlmap, OWASP ZAP, and a Metasploit auxiliary/scanner module) behind one
-CLI, with an LLM router that works with either a cloud provider or a local
-model (Ollama).
+katana, nmap, nuclei, nikto, testssl.sh, WPScan, ffuf, feroxbuster, Arjun,
+dalfox, sqlmap, OWASP ZAP, and a Metasploit auxiliary/scanner module)
+behind one CLI, with an LLM router that works with either a cloud
+provider or a local model (Ollama).
 
 Written and verified on Windows and Linux — see docs/WINDOWS.md /
 docs/LINUX.md for what's different (and what actually went wrong and got
@@ -127,16 +127,19 @@ than any one alone — theHarvester also surfaces non-subdomain OSINT like
 email addresses and ASNs it finds along the way), httpx probes all of the
 discovered hosts (one batched call) to find which actually respond, and
 the rest of the pipeline (katana, zap-baseline, nmap, nuclei, nikto,
-msf-http-version, testssl, wpscan, ffuf, feroxbuster, dalfox, sqlmap,
-zap-full-scan) runs once per live host — a discovered `api.example.com`
-gets the same active scan as `example.com` itself, not just a line in a
-subdomain list.
+msf-http-version, testssl, wpscan, ffuf, feroxbuster, arjun, dalfox,
+sqlmap, zap-full-scan) runs once per live host — a discovered
+`api.example.com` gets the same active scan as `example.com` itself, not
+just a line in a subdomain list.
 `testssl` (TLS/SSL configuration + known-vulnerability checks) only runs
 when the live host actually responded over HTTPS — it's skipped instantly,
 not just quickly, for a plain-HTTP host. `wpscan` (WordPress-specific
 plugin/theme/user enumeration and known-CVE lookups, with an optional free
 API token — `SCORPION_WPSCAN_API_TOKEN`) degrades to no findings just as
-quickly against anything that isn't actually WordPress.
+quickly against anything that isn't actually WordPress. `arjun` probes
+~50 default GET-parameter names for ones that measurably change the
+response — undocumented debug/internal flags ffuf/feroxbuster's
+path-based wordlists have no way to find.
 zap-full-scan is by far the slowest stage (it actively attacks every
 spidered page/param rather than a fixed template set) — expect several
 extra minutes per host versus nuclei alone. `msf-http-version` needs

@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     # sullo/nikto Docker Hub name that's often referenced doesn't exist.
     nikto_docker_image: str = "ghcr.io/sullo/nikto"
     testssl_docker_image: str = "drwetter/testssl.sh"
+    arjun_docker_image: str = "trickest/arjun"
     theharvester_docker_image: str = "secsi/theharvester"
     # Free, no-API-key-required sources only (crtsh/hackertarget/otx/urlscan/
     # rapiddns) — confirmed for real all return useful data without a key.
@@ -103,6 +104,9 @@ class Settings(BaseSettings):
     # Multi-source passive OSINT lookup (crt.sh, HackerTarget, OTX, urlscan,
     # RapidDNS) — measured ~12s against a real domain with 5 sources.
     theharvester_timeout_seconds: int = 90
+    # Probes ~50 default candidate GET parameter names — measured ~1-2s
+    # against a trivial test target; budget more for a slow real site.
+    arjun_timeout_seconds: int = 120
     zap_baseline_timeout_seconds: int = 300
     # zap-full-scan actively attacks every spidered page/param, not just a
     # fixed template set like nuclei — genuinely slower on a real site with

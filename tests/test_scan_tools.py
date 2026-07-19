@@ -19,6 +19,7 @@ from api.tool_router import (
     _parse_amass_output,
     _theharvester_host_names,
     run_amass,
+    run_arjun,
     run_dalfox,
     run_feroxbuster,
     run_ffuf,
@@ -456,3 +457,53 @@ def test_theharvester_runs_cleanly_against_a_safe_domain():
     # every finding is correctly tagged, not any particular count.
     findings = run_theharvester("example.com")
     assert all(f["source_tool"] == "theharvester" for f in findings)
+
+
+class _HiddenParamHandler(http.server.BaseHTTPRequestHandler):
+    """Serves a materially different response only when a specific,
+    undocumented GET parameter is present — a real, working hidden
+    parameter for Arjun's differential-response technique to actually
+    detect, not a mock."""
+
+    def do_GET(self):
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        if "debug" in params:
+            body = b"<html>DEBUG MODE ENABLED - verbose diagnostic output here</html>"
+        else:
+            body = b"<html>normal page</html>"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format, *args):  # noqa: A002 - matches BaseHTTPRequestHandler's signature
+        pass
+
+
+def _start_hidden_param_server(port: int) -> http.server.ThreadingHTTPServer:
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), _HiddenParamHandler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd
+
+
+def test_arjun_finds_a_real_hidden_parameter():
+    port = 8810
+    httpd = _start_hidden_param_server(port)
+    try:
+        findings = run_arjun(f"http://{TARGET_HOST}:{port}/")
+    finally:
+        httpd.shutdown()
+    assert any(f["title"] == "hidden parameter discovered: debug" for f in findings)
+    assert all(f["source_tool"] == "arjun" for f in findings)
+
+
+def test_arjun_runs_cleanly_against_a_host_with_no_hidden_params():
+    port = 8811
+    httpd, tmpdir = _start_http_server(port)
+    try:
+        findings = run_arjun(f"http://{TARGET_HOST}:{port}/")
+    finally:
+        httpd.shutdown()
+        tmpdir.cleanup()
+    assert findings == []
