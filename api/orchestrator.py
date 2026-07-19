@@ -57,6 +57,7 @@ from api.tool_router import (
     run_nuclei,
     run_sqlmap,
     run_subfinder,
+    run_testssl,
     run_zap_baseline,
     run_zap_full_scan,
 )
@@ -105,6 +106,9 @@ PIPELINE: list[ToolStage] = [
     # vetted auxiliary/scanner module is ever run; see run_msf_http_version's
     # docstring for why nothing broader is exposed.
     ToolStage(name="msf-http-version", action_class=ACTIVE_SCAN, runner=run_msf_http_version, target_form="url"),
+    # No-ops instantly (no Docker invocation at all) for a plain-HTTP live
+    # host — only runs when the URL httpx actually found live is https://.
+    ToolStage(name="testssl", action_class=ACTIVE_SCAN, runner=run_testssl, target_form="url"),
     ToolStage(name="ffuf", action_class=ACTIVE_SCAN, runner=run_ffuf, target_form="url"),
     # A different engine than ffuf (recursive by default — follows
     # discovered directories rather than one flat pass), so it often

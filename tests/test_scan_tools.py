@@ -7,6 +7,8 @@ import functools
 import http.server
 import json
 import sqlite3
+import ssl
+import subprocess
 import tempfile
 import threading
 import urllib.parse
@@ -25,6 +27,7 @@ from api.tool_router import (
     run_nuclei,
     run_sqlmap,
     run_subfinder,
+    run_testssl,
     run_zap_api_scan,
     run_zap_baseline,
     run_zap_full_scan,
@@ -350,3 +353,56 @@ def test_msf_http_version_detects_a_real_service():
     # Confirmed for real: Python's SimpleHTTPRequestHandler's banner gets
     # picked up by http_version's own detection, not something we inject.
     assert "SimpleHTTP" in findings[0]["description"]
+
+
+def _generate_self_signed_cert(tmp_dir: Path) -> tuple[Path, Path]:
+    cert_path = tmp_dir / "cert.pem"
+    key_path = tmp_dir / "key.pem"
+    subprocess.run(
+        [
+            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-keyout", str(key_path), "-out", str(cert_path),
+            "-days", "1", "-nodes", "-subj", "/CN=localhost",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return cert_path, key_path
+
+
+def test_testssl_finds_real_issues_on_a_self_signed_cert():
+    tmpdir = tempfile.TemporaryDirectory()
+    cert_path, key_path = _generate_self_signed_cert(Path(tmpdir.name))
+
+    port = 8806
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), http.server.SimpleHTTPRequestHandler)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+    httpd.socket = ctx.wrap_socket(httpd.socket, server_side=True)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    try:
+        findings = run_testssl(f"https://{TARGET_HOST}:{port}")
+    finally:
+        httpd.shutdown()
+        tmpdir.cleanup()
+
+    # A self-signed cert is a real, guaranteed finding regardless of
+    # environment specifics — asserts real findings parsed cleanly.
+    assert len(findings) > 0
+    assert all(f["source_tool"] == "testssl" for f in findings)
+    assert any("self signed" in f["description"].lower() for f in findings)
+
+
+def test_testssl_runs_cleanly_against_a_plain_http_host():
+    # Confirmed for real during development: testssl.sh against a
+    # non-TLS host correctly reports 0 findings rather than hanging or
+    # erroring — this asserts that behavior stays true.
+    port = 8807
+    httpd, tmpdir = _start_http_server(port)
+    try:
+        findings = run_testssl(f"http://{TARGET_HOST}:{port}")
+    finally:
+        httpd.shutdown()
+        tmpdir.cleanup()
+    assert findings == []

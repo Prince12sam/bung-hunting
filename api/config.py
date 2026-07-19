@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # Published under GitHub Container Registry, not Docker Hub — the
     # sullo/nikto Docker Hub name that's often referenced doesn't exist.
     nikto_docker_image: str = "ghcr.io/sullo/nikto"
+    testssl_docker_image: str = "drwetter/testssl.sh"
 
     tool_timeout_seconds: int = 180
     # nuclei's first run per template-cache-volume downloads the templates
@@ -83,6 +84,7 @@ class Settings(BaseSettings):
     # self-terminates and still writes a valid report before this outer
     # timeout would otherwise kill the container mid-run.
     nikto_timeout_seconds: int = 600
+    testssl_timeout_seconds: int = 180
     zap_baseline_timeout_seconds: int = 300
     # zap-full-scan actively attacks every spidered page/param, not just a
     # fixed template set like nuclei — genuinely slower on a real site with

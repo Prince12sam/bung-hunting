@@ -890,3 +890,83 @@ def run_msf_http_version(url: str) -> list[dict]:
             "line": None,
         }
     ]
+
+
+_TESTSSL_SEVERITY_MAP = {
+    "CRITICAL": "critical",
+    "HIGH": "high",
+    "MEDIUM": "medium",
+    "LOW": "low",
+}
+
+
+def run_testssl(url: str) -> list[dict]:
+    """TLS/SSL configuration + known-vulnerability scan via drwetter/testssl.sh
+    — weak ciphers, missing security headers, certificate problems,
+    Heartbleed/POODLE/ROBOT/etc. Nothing else in this pipeline checks TLS
+    configuration at all. Mostly a real handshake/protocol probe, not
+    exploit payloads — same active-scan classification as nmap's service
+    detection.
+
+    testssl.sh emits thousands of checks, most of which are "OK"/"INFO"
+    (this is fine, here's what we found) rather than actual findings —
+    only LOW/MEDIUM/HIGH/CRITICAL severities are surfaced, or the report
+    would be almost entirely noise.
+
+    Confirmed for real: testssl.sh does NOT fail fast against a plain-HTTP
+    (non-TLS) port — it retries several TLS handshake variants against
+    whatever responds, and a Python http.server answering with plain 400s
+    to garbled requests kept that retry cascade going for the *entire*
+    configured timeout rather than failing in a few seconds. Skipping
+    outright when there's no positive evidence of HTTPS avoids this
+    instead of just bounding it — most `scan` targets are plain HTTP, so
+    this isn't a rare case to special-case around.
+    """
+    parsed = urllib.parse.urlsplit(url if "://" in url else f"http://{url}")
+    host = parsed.hostname
+    if not host:
+        raise ToolError(f"could not extract a host from {url!r}")
+    if parsed.scheme != "https":
+        return []
+    port = parsed.port or 443
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        report_name = "testssl.json"
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{Path(tmp_dir).resolve()}:/out:rw",
+            settings.testssl_docker_image,
+            "--jsonfile", f"/out/{report_name}", "--warnings", "off",
+            # Bound each individual connection attempt too, as
+            # defense-in-depth beyond just skipping non-https URLs above.
+            "--connect-timeout", "10", "--openssl-timeout", "10",
+            f"{host}:{port}",
+        ]
+        result = _run_docker(cmd, "testssl", timeout=settings.testssl_timeout_seconds)
+        report_path = Path(tmp_dir) / report_name
+        if result.returncode != 0 and not report_path.exists():
+            raise ToolError(f"testssl.sh failed (exit {result.returncode}): {result.stderr[-2000:]}")
+        if not report_path.exists():
+            return []
+
+        try:
+            rows = json.loads(report_path.read_text(encoding="utf-8", errors="replace"))
+        except json.JSONDecodeError as exc:
+            raise ToolError(f"could not parse testssl.sh output: {exc}") from exc
+
+        findings = []
+        for row in rows:
+            severity = _TESTSSL_SEVERITY_MAP.get(str(row.get("severity", "")).upper())
+            if severity is None:
+                continue
+            findings.append(
+                {
+                    "source_tool": "testssl",
+                    "severity": severity,
+                    "title": f"{row.get('id', 'testssl-finding')}: {row.get('finding', '')}",
+                    "description": f"{host}:{port} — {row.get('finding', '')}",
+                    "file_path": None,
+                    "line": None,
+                }
+            )
+        return findings

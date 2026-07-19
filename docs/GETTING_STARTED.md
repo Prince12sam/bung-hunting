@@ -124,9 +124,12 @@ each discover subdomains independently (different passive data sources,
 so running both surfaces more real subdomains than either alone), httpx
 probes all of them (one batched call) to find which actually respond, and
 the rest of the pipeline (katana, zap-baseline, nmap, nuclei, nikto,
-msf-http-version, ffuf, feroxbuster, dalfox, sqlmap, zap-full-scan) runs
-once per live host — a discovered `api.example.com` gets the same active
-scan as `example.com` itself, not just a line in a subdomain list.
+msf-http-version, testssl, ffuf, feroxbuster, dalfox, sqlmap, zap-full-scan)
+runs once per live host — a discovered `api.example.com` gets the same
+active scan as `example.com` itself, not just a line in a subdomain list.
+`testssl` (TLS/SSL configuration + known-vulnerability checks) only runs
+when the live host actually responded over HTTPS — it's skipped instantly,
+not just quickly, for a plain-HTTP host.
 zap-full-scan is by far the slowest stage (it actively attacks every
 spidered page/param rather than a fixed template set) — expect several
 extra minutes per host versus nuclei alone. `msf-http-version` needs
