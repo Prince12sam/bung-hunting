@@ -23,6 +23,7 @@ from api.tool_router import (
     run_dalfox,
     run_feroxbuster,
     run_ffuf,
+    run_gau,
     run_katana,
     run_msf_http_version,
     run_nikto,
@@ -507,3 +508,18 @@ def test_arjun_runs_cleanly_against_a_host_with_no_hidden_params():
         httpd.shutdown()
         tmpdir.cleanup()
     assert findings == []
+
+
+def test_gau_runs_cleanly_against_a_safe_domain():
+    # Passive-only against third-party archives/indexes (OTX, urlscan,
+    # CommonCrawl by default — SCORPION_GAU_PROVIDERS excludes Wayback,
+    # confirmed for real to take 15+ minutes against a heavily-archived
+    # domain) — never contacts the domain's own infrastructure, same
+    # passive-recon classification as subfinder/amass/theHarvester.
+    # Real provider result counts for example.com fluctuated between runs
+    # during development (thousands of OTX-pulse-noise URLs on one run,
+    # zero on another minutes later, most likely rate-limiting) — this
+    # only asserts the tool runs/parses cleanly and every finding is
+    # correctly tagged, not any particular count.
+    findings = run_gau("example.com")
+    assert all(f["source_tool"] == "gau" for f in findings)

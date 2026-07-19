@@ -50,6 +50,7 @@ from api.tool_router import (
     run_dalfox,
     run_feroxbuster,
     run_ffuf,
+    run_gau,
     run_httpx,
     run_katana,
     run_msf_http_version,
@@ -74,6 +75,7 @@ ENUMERATION_SOURCES: list[tuple[str, Callable[[str], list[dict]]]] = [
     ("subfinder", run_subfinder),
     ("amass", run_amass),
     ("theharvester", run_theharvester),
+    ("gau", run_gau),
 ]
 
 

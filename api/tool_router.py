@@ -1269,3 +1269,41 @@ def run_arjun(url: str) -> list[dict]:
                     }
                 )
         return findings
+
+
+def run_gau(domain: str) -> list[dict]:
+    """Historical URL discovery via sxcurity/gau (getallurls) — pulls every
+    URL a third-party archive/index has ever recorded for the domain
+    (AlienVault OTX, urlscan, CommonCrawl by default — see
+    SCORPION_GAU_PROVIDERS), surfacing old/forgotten endpoints, parameters,
+    and files that live crawling (katana/ffuf/feroxbuster) has no way to
+    find since they only see what's reachable today. Purely passive —
+    every provider is a third-party archive, never a request to the
+    domain's own infrastructure, same classification as subfinder/amass/
+    theHarvester.
+    """
+    cmd = [
+        "docker", "run", "--rm",
+        settings.gau_docker_image,
+        domain, "--json", "--providers", settings.gau_providers, "--threads", "5",
+    ]
+    result = _run_docker(cmd, "gau", timeout=settings.gau_timeout_seconds)
+    if result.returncode != 0 and not result.stdout.strip():
+        raise ToolError(f"gau failed (exit {result.returncode}): {result.stderr[-2000:]}")
+
+    findings = []
+    for row in _parse_json_lines(result.stdout):
+        url = row.get("url")
+        if not url:
+            continue
+        findings.append(
+            {
+                "source_tool": "gau",
+                "severity": "info",
+                "title": f"historical URL discovered: {url}",
+                "description": "source: gau (passive archive/index lookup)",
+                "file_path": None,
+                "line": None,
+            }
+        )
+    return findings

@@ -2,9 +2,9 @@
 
 Scorpion is a local-first AI security platform: a Coding Agent (`analyze`/`fix`)
 and a Pentest Agent (`scan`, chaining httpx, subfinder, amass, theHarvester,
-katana, nmap, nuclei, nikto, testssl.sh, WPScan, ffuf, feroxbuster, Arjun,
-dalfox, sqlmap, OWASP ZAP, and a Metasploit auxiliary/scanner module)
-behind one CLI, with an LLM router that works with either a cloud
+gau, katana, nmap, nuclei, nikto, testssl.sh, WPScan, ffuf, feroxbuster,
+Arjun, dalfox, sqlmap, OWASP ZAP, and a Metasploit auxiliary/scanner
+module) behind one CLI, with an LLM router that works with either a cloud
 provider or a local model (Ollama).
 
 Written and verified on Windows and Linux — see docs/WINDOWS.md /
@@ -121,11 +121,13 @@ showing nothing for that long is indistinguishable from a hang.
 ### Enumeration
 
 `scan` doesn't just check the one host you give it: subfinder, amass,
-*and* theHarvester each discover subdomains independently (different
-passive data sources, so running all three surfaces more real subdomains
-than any one alone — theHarvester also surfaces non-subdomain OSINT like
-email addresses and ASNs it finds along the way), httpx probes all of the
-discovered hosts (one batched call) to find which actually respond, and
+theHarvester, *and* gau each discover subdomains/URLs independently
+(different data sources, so running all of them surfaces more than any
+one alone — theHarvester also surfaces non-subdomain OSINT like email
+addresses and ASNs, and gau surfaces historical URLs/endpoints/parameters
+from third-party archives that live crawling can't find), httpx probes
+all of the discovered hosts (one batched call) to find which actually
+respond, and
 the rest of the pipeline (katana, zap-baseline, nmap, nuclei, nikto,
 msf-http-version, testssl, wpscan, ffuf, feroxbuster, arjun, dalfox,
 sqlmap, zap-full-scan) runs once per live host — a discovered
